@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "sdk_version": "0.24.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "lupo-vendas-mcp",
+      "version": "0.1.0",
+      "title": "Lupo · Controle de Conversão"
+    },
+    "tools": [
+      {
+        "name": "list_stores",
+        "title": "Listar lojas",
+        "description": "Retorna todas as lojas Lupo cadastradas (id, nome, cidade).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_sales_reps",
+        "title": "Listar vendedoras",
+        "description": "Retorna as vendedoras cadastradas. Opcionalmente filtra por store_id.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "store_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Filtrar por loja (UUID)."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "attendance_summary",
+        "title": "Resumo de atendimentos",
+        "description": "Retorna totais de atendimentos e conversão em um período (start_date/end_date, formato YYYY-MM-DD). Filtros opcionais por store_id e sales_rep_id.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "start_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Data inicial YYYY-MM-DD."
+            },
+            "end_date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Data final YYYY-MM-DD."
+            },
+            "store_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sales_rep_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "start_date",
+            "end_date"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_no_sale_reasons",
+        "title": "Listar motivos de não venda",
+        "description": "Retorna os motivos de não venda cadastrados.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

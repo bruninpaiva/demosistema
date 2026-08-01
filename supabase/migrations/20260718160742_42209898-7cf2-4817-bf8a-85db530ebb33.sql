@@ -1,0 +1,2 @@
+ALTER TABLE public.sales_reps ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'available';
+ALTER TABLE public.sales_reps ADD CONSTRAINT sales_reps_status_check CHECK (status IN ('available','lunch','off'));

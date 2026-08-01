@@ -1,0 +1,2 @@
+ALTER TABLE public.sales_reps DROP CONSTRAINT IF EXISTS sales_reps_status_check;
+ALTER TABLE public.sales_reps ADD CONSTRAINT sales_reps_status_check CHECK (status IN ('available','lunch','off','in_service'));

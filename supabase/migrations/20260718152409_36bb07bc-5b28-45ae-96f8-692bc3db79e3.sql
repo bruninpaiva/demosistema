@@ -1,0 +1,2 @@
+ALTER TABLE public.attendances DROP CONSTRAINT attendances_sales_rep_id_fkey;
+ALTER TABLE public.attendances ADD CONSTRAINT attendances_sales_rep_id_fkey FOREIGN KEY (sales_rep_id) REFERENCES public.sales_reps(id) ON DELETE CASCADE;

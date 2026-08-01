@@ -1,0 +1,15 @@
+{
+  "name": "Lupo — Conversão de Vendas",
+  "short_name": "Lupo Vendas",
+  "description": "Registro de atendimentos e conversão da loja Lupo.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#0a1e42",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
