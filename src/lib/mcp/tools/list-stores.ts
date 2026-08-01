@@ -4,7 +4,7 @@ import { getPublicSupabase } from "../supabase";
 export default defineTool({
   name: "list_stores",
   title: "Listar lojas",
-  description: "Retorna todas as lojas Lupo cadastradas (id, nome, cidade).",
+  description: "Retorna todas as lojas cadastradas (id, nome, cidade).",
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async () => {

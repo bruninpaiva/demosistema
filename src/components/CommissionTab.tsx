@@ -979,7 +979,7 @@ function WorkView({
         <section class="card">
           <header>
             <div class="brand">
-              <div class="logo">LUPO</div>
+              <div class="logo">BPINFO</div>
               <div class="store">${info.store_name}</div>
             </div>
             <div class="comp">

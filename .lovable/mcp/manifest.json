@@ -7,15 +7,15 @@
   },
   "mcp": {
     "server": {
-      "name": "lupo-vendas-mcp",
+      "name": "bpinfo-erp-mcp",
       "version": "0.1.0",
-      "title": "Lupo · Controle de Conversão"
+      "title": "BPInfo ERP"
     },
     "tools": [
       {
         "name": "list_stores",
         "title": "Listar lojas",
-        "description": "Retorna todas as lojas Lupo cadastradas (id, nome, cidade).",
+        "description": "Retorna todas as lojas cadastradas (id, nome, cidade).",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,

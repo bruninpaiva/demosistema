@@ -35,7 +35,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import lupoLogo from "@/assets/lupo-logo.png.asset.json";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
@@ -70,7 +69,7 @@ function AdminPage() {
       <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
         <Link to="/" className="rounded-lg p-2 hover:bg-white/10" aria-label="Voltar"><ArrowLeft size={22} /></Link>
         <div className="flex items-center rounded-lg bg-white px-2.5 py-1">
-          <img src={lupoLogo.url} alt="Lupo" className="h-6 w-auto" />
+          <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="h-6 w-auto" />
         </div>
         <h1 className="text-xl font-bold">Administração</h1>
         <button
@@ -193,7 +192,7 @@ function AdminLogin({ onOk }: { onOk: () => void }) {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
         <div className="mb-6 text-center">
-          <img src={lupoLogo.url} alt="Lupo" className="mx-auto mb-3 h-14 w-auto" />
+          <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="mx-auto mb-3 h-14 w-auto" />
           <p className="text-sm text-muted-foreground">Administração — acesso restrito</p>
         </div>
         <label className="mb-1 block text-sm font-semibold">Usuário</label>
@@ -1135,11 +1134,11 @@ function ExportTab() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Atendimentos");
-    XLSX.writeFile(wb, `lupo-atendimentos-${Date.now()}.xlsx`);
+    XLSX.writeFile(wb, `bpinfo-atendimentos-${Date.now()}.xlsx`);
   };
   const exportPdf = () => {
     const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(16); doc.text("Lupo — Atendimentos", 14, 15);
+    doc.setFontSize(16); doc.text("BPInfo ERP — Atendimentos", 14, 15);
     doc.setFontSize(10); doc.text(`Período: ${label} — ${start.toLocaleDateString("pt-BR")} a ${end.toLocaleDateString("pt-BR")}`, 14, 22);
     autoTable(doc, {
       startY: 28,
@@ -1148,7 +1147,7 @@ function ExportTab() {
       styles: { fontSize: 8 },
       headStyles: { fillColor: [10, 30, 66] },
     });
-    doc.save(`lupo-atendimentos-${Date.now()}.pdf`);
+    doc.save(`bpinfo-atendimentos-${Date.now()}.pdf`);
   };
 
   return (

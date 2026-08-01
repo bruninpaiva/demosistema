@@ -2,12 +2,11 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { BarChart3, Store as StoreIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import lupoLogo from "@/assets/lupo-logo.png.asset.json";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Lupo · Selecione a loja" },
+      { title: "BPInfo ERP · Selecione a loja" },
       { name: "description", content: "Selecione a loja para começar" },
     ],
   }),
@@ -38,7 +37,7 @@ function StorePicker() {
       <header className="flex items-center justify-between bg-brand px-6 py-4 text-brand-foreground shadow-md">
         <div className="flex items-center gap-3">
           <div className="flex items-center rounded-lg bg-white px-3 py-1.5">
-            <img src={lupoLogo.url} alt="Lupo" className="h-7 w-auto" />
+            <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="h-7 w-auto" />
           </div>
           <span className="text-sm opacity-80">Conversão</span>
         </div>

@@ -29,7 +29,6 @@ import {
 } from "@dnd-kit/core";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import lupoLogo from "@/assets/lupo-logo.png.asset.json";
 
 export const Route = createFileRoute("/loja/$storeId/")({
   component: LojaHome,
@@ -121,7 +120,7 @@ function PinGate({ store, onOk }: { store: Store; onOk: () => void }) {
           <ArrowLeft size={24} />
         </Link>
         <div className="flex items-center rounded-lg bg-white px-2.5 py-1">
-          <img src={lupoLogo.url} alt="Lupo" className="h-6 w-auto" />
+          <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="h-6 w-auto" />
         </div>
         <h1 className="text-lg font-bold">{store.name}</h1>
       </header>
@@ -369,7 +368,7 @@ function Queue({ store }: { store: Store }) {
             <ArrowLeft size={22} />
           </button>
           <div className="hidden sm:flex items-center rounded-lg bg-white px-2.5 py-1 shrink-0">
-            <img src={lupoLogo.url} alt="Lupo" className="h-6 w-auto" />
+            <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="h-6 w-auto" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-xs opacity-80 truncate">Loja</p>

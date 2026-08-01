@@ -1,7 +1,7 @@
 {
-  "name": "Lupo — Conversão de Vendas",
-  "short_name": "Lupo Vendas",
-  "description": "Registro de atendimentos e conversão da loja Lupo.",
+  "name": "BPInfo ERP",
+  "short_name": "BPInfo",
+  "description": "Controle de atendimentos e vendas do BPInfo ERP.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",

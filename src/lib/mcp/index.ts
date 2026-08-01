@@ -5,10 +5,10 @@ import attendanceSummary from "./tools/attendance-summary";
 import listNoSaleReasons from "./tools/list-no-sale-reasons";
 
 export default defineMcp({
-  name: "lupo-vendas-mcp",
-  title: "Lupo · Controle de Conversão",
+  name: "bpinfo-erp-mcp",
+  title: "BPInfo ERP",
   version: "0.1.0",
   instructions:
-    "Ferramentas somente leitura sobre as lojas Lupo, vendedoras e atendimentos. Use list_stores/list_sales_reps para descoberta e attendance_summary para métricas de conversão em um período.",
+    "Ferramentas somente leitura sobre as lojas, vendedoras e atendimentos. Use list_stores/list_sales_reps para descoberta e attendance_summary para métricas de conversão em um período.",
   tools: [listStores, listSalesReps, attendanceSummary, listNoSaleReasons],
 });

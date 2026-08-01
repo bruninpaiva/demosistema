@@ -44,14 +44,14 @@
 
 :root {
   --radius: 1rem;
-  /* Lupo official palette — navy #002F87, red #E30613, white */
+  /* BPInfo palette — navy #002F87, red #E30613, white */
   --background: oklch(0.985 0.004 250);
   --foreground: oklch(0.18 0.06 265);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.18 0.06 265);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.06 265);
-  --brand: oklch(0.34 0.19 265);            /* Lupo navy #002F87 */
+  --brand: oklch(0.34 0.19 265);            /* BPInfo navy #002F87 */
   --brand-foreground: oklch(1 0 0);
   --primary: oklch(0.34 0.19 265);
   --primary-foreground: oklch(1 0 0);
@@ -61,7 +61,7 @@
   --muted-foreground: oklch(0.48 0.03 265);
   --accent: oklch(0.95 0.04 25);
   --accent-foreground: oklch(0.34 0.19 265);
-  --destructive: oklch(0.58 0.24 27);       /* Lupo red #E30613 */
+  --destructive: oklch(0.58 0.24 27);       /* BPInfo red #E30613 */
   --destructive-foreground: oklch(1 0 0);
   --success: oklch(0.62 0.16 155);
   --success-foreground: oklch(1 0 0);

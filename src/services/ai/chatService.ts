@@ -13,7 +13,7 @@ export const INITIAL_ASSISTANT_MESSAGE: ChatMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Olá! Sou o Assistente IA da Lupo.\n\nPosso responder perguntas sobre vendas, lojas, metas, funcionários, atendimentos, motivos de não venda, comissões e indicadores do sistema.",
+    "Olá! Sou o Assistente BPInfo.\n\nPosso responder perguntas sobre vendas, lojas, metas, funcionários, atendimentos, motivos de não venda, comissões e indicadores do sistema.",
   createdAt: Date.now(),
 };
 
