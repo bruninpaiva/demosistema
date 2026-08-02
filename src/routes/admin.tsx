@@ -1276,6 +1276,31 @@ function severityLabel(severity: AlertSeverity): string {
   return severity === "critical" ? "Criticas" : severity === "warning" ? "Atencao" : "Informativas";
 }
 
+function severityVisual(severity: AlertSeverity) {
+  if (severity === "critical") {
+    return {
+      Icon: AlertCircle,
+      heading: "text-destructive",
+      marker: "bg-destructive/10 text-destructive",
+      divider: "divide-destructive/15",
+    };
+  }
+  if (severity === "warning") {
+    return {
+      Icon: AlertTriangle,
+      heading: "text-amber-700 dark:text-amber-400",
+      marker: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+      divider: "divide-amber-500/15",
+    };
+  }
+  return {
+    Icon: Info,
+    heading: "text-sky-700 dark:text-sky-300",
+    marker: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+    divider: "divide-sky-500/15",
+  };
+}
+
 function NotificationBell() {
   const { stores } = useStores();
   const [reps, setReps] = useState<RepOption[]>([]);
@@ -1319,20 +1344,32 @@ function NotificationBell() {
         {alerts.length === 0 ? (
           <div className="px-3 py-4 text-sm text-muted-foreground">Nenhuma notificacao ativa.</div>
         ) : (
-          groups.map((group) => group.items.length > 0 && (
-            <div key={group.severity} className="py-1">
-              <p className="px-3 py-1 text-xs font-bold uppercase text-muted-foreground">{group.label}</p>
-              {group.items.map((alert) => (
-                <div key={alert.id} className="px-3 py-2 text-sm">
-                  <p className="font-semibold text-foreground">{alert.title}</p>
-                  <p className="text-muted-foreground">{alert.message}</p>
-                  {alert.details?.map((detail) => (
-                    <p key={detail} className="text-xs text-muted-foreground">{detail}</p>
+          groups.map((group) => {
+            if (group.items.length === 0) return null;
+            const visual = severityVisual(group.severity);
+            const Icon = visual.Icon;
+            return (
+              <div key={group.severity} className="py-2 first:pt-1">
+                <div className={`mb-1 flex items-center gap-2 px-3 py-1 text-xs font-bold uppercase ${visual.heading}`}>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full ${visual.marker}`}>
+                    <Icon size={13} />
+                  </span>
+                  {group.label}
+                </div>
+                <div className={`mx-3 divide-y ${visual.divider}`}>
+                  {group.items.map((alert) => (
+                    <div key={alert.id} className="py-2 text-sm first:pt-1 last:pb-1">
+                      <p className="font-bold leading-snug text-foreground">{alert.title}</p>
+                      <p className="mt-0.5 leading-snug text-muted-foreground">{alert.message}</p>
+                      {alert.details?.map((detail) => (
+                        <p key={detail} className="mt-0.5 text-xs leading-snug text-muted-foreground/80">{detail}</p>
+                      ))}
+                    </div>
                   ))}
                 </div>
-              ))}
-            </div>
-          ))
+              </div>
+            );
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>
