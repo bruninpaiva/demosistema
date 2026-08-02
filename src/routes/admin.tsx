@@ -26,6 +26,11 @@ import {
   ArrowUpDown,
   UserCheck,
   UserX,
+  Mail,
+  ChevronDown,
+  LogOut,
+  User,
+  Lock,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
 import CommissionTab from "@/components/CommissionTab";
@@ -34,6 +39,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,6 +59,8 @@ type Tab = "dashboard" | "por-vendedora" | "pausas" | "lojas" | "vendedoras" | "
 const AUTH_KEY = "lupo_admin_ok";
 const ACTOR_USER_KEY = "lupo_admin_user";
 const ACTOR_PASS_KEY = "lupo_admin_pass";
+const ACTOR_NAME_KEY = "lupo_admin_name";
+const ACTOR_ROLE_KEY = "lupo_admin_role";
 const MUST_CHANGE_KEY = "lupo_admin_must_change";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -79,6 +88,7 @@ function AdminPage() {
   const [mustChange, setMustChange] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(MUST_CHANGE_KEY) === "1"
   );
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
     if (authed) return;
@@ -86,6 +96,31 @@ function AdminPage() {
       setAdminExists(error ? true : Boolean(data));
     });
   }, [authed]);
+
+  // Impede que o botão "Voltar" do navegador reexiba o painel a partir do
+  // bfcache depois do logout: se a página for restaurada do cache em vez de
+  // recarregada, força um reload real, que vai reler a sessão (já vazia).
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
+  const logout = () => {
+    sessionStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem(ACTOR_USER_KEY);
+    sessionStorage.removeItem(ACTOR_PASS_KEY);
+    sessionStorage.removeItem(ACTOR_NAME_KEY);
+    sessionStorage.removeItem(ACTOR_ROLE_KEY);
+    sessionStorage.removeItem(MUST_CHANGE_KEY);
+    window.dispatchEvent(new Event("lupo-admin-auth-changed"));
+    // Navegação real (não só troca de estado do React): garante uma entrada
+    // de histórico "deslogada" de verdade, para o botão Voltar nunca
+    // reexibir o painel autenticado.
+    window.location.href = "/admin";
+  };
 
   if (!authed) {
     if (adminExists === null) {
@@ -120,20 +155,38 @@ function AdminPage() {
           <img src="/bpinfo-logo.jpg" alt="BP Demo" className="h-6 w-auto" />
         </div>
         <h1 className="text-xl font-bold">Administração</h1>
-        <button
-          onClick={() => {
-            sessionStorage.removeItem(AUTH_KEY);
-            sessionStorage.removeItem(ACTOR_USER_KEY);
-            sessionStorage.removeItem(ACTOR_PASS_KEY);
-            sessionStorage.removeItem(MUST_CHANGE_KEY);
-            window.dispatchEvent(new Event("lupo-admin-auth-changed"));
-            setAuthed(false);
-          }}
-          className="ml-auto rounded-lg border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10"
-        >
-          Sair
-        </button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="ml-auto flex items-center gap-2 rounded-lg border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10">
+              <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${paletteFor(sessionStorage.getItem(ACTOR_NAME_KEY) || "?")}`}>
+                {initialsFor(sessionStorage.getItem(ACTOR_NAME_KEY) || "?")}
+              </span>
+              <span className="hidden font-semibold sm:inline">
+                {sessionStorage.getItem(ACTOR_NAME_KEY) || "Minha conta"}
+              </span>
+              <ChevronDown size={14} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>
+              <p className="font-semibold">{sessionStorage.getItem(ACTOR_NAME_KEY) || "—"}</p>
+              <p className="text-xs font-normal text-muted-foreground">
+                {ROLE_LABELS[sessionStorage.getItem(ACTOR_ROLE_KEY) ?? ""] ?? "—"}
+              </p>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setShowChangePassword(true)} className="gap-2">
+              <KeyRound size={14} /> Alterar senha
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={logout} className="gap-2 text-destructive focus:text-destructive">
+              <LogOut size={14} /> Sair
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
+
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
 
       <nav className="sticky top-0 z-10 flex overflow-x-auto border-b border-border bg-card shadow-sm">
         {([
@@ -227,11 +280,13 @@ function AdminLogin({ onOk }: { onOk: (requiresPasswordChange: boolean) => void 
       _password: pass,
     });
     setBusy(false);
-    const row = (data as { must_change_password: boolean }[] | null)?.[0];
+    const row = (data as { name: string; role: string; must_change_password: boolean }[] | null)?.[0];
     if (!err && row) {
       sessionStorage.setItem(AUTH_KEY, "1");
       sessionStorage.setItem(ACTOR_USER_KEY, trimmedEmail);
       sessionStorage.setItem(ACTOR_PASS_KEY, pass);
+      sessionStorage.setItem(ACTOR_NAME_KEY, row.name);
+      sessionStorage.setItem(ACTOR_ROLE_KEY, row.role);
       if (row.must_change_password) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
       window.dispatchEvent(new Event("lupo-admin-auth-changed"));
       supabase.rpc("admin_record_login", { _email: trimmedEmail, _password: pass });
@@ -242,40 +297,64 @@ function AdminLogin({ onOk }: { onOk: (requiresPasswordChange: boolean) => void 
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
-        <div className="mb-6 text-center">
-          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
-          <p className="text-sm text-muted-foreground">Administração — acesso restrito</p>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-xl sm:p-8">
+        <div className="mb-8 text-center">
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-4 h-12 w-auto sm:h-14" />
+          <h1 className="text-lg font-bold text-foreground">Administração</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Acesso restrito</p>
         </div>
-        <label className="mb-1 block text-sm font-semibold">E-mail</label>
-        <input
-          autoFocus
-          type="email"
-          value={email}
-          onChange={(e) => { setEmail(e.target.value); setError(false); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
-        />
-        <label className="mb-1 block text-sm font-semibold">Senha</label>
-        <input
-          type="password"
-          value={pass}
-          onChange={(e) => { setPass(e.target.value); setError(false); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
-        />
-        {error && <p className="mb-3 text-sm font-semibold text-destructive">E-mail ou senha incorretos.</p>}
-        <button type="submit" disabled={busy} className="w-full rounded-xl bg-brand px-6 py-3 text-lg font-bold text-brand-foreground disabled:opacity-60">
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">E-mail</label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                autoFocus
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(false); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">Senha</label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                type="password"
+                value={pass}
+                onChange={(e) => { setPass(e.target.value); setError(false); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-sm font-semibold text-destructive">E-mail ou senha incorretos.</p>}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-base font-bold text-brand-foreground transition hover:opacity-90 disabled:opacity-60"
+        >
+          {busy && <Loader2 size={18} className="animate-spin" />}
           {busy ? "Entrando..." : "Entrar"}
         </button>
+
         <button
           type="button"
           disabled
           title="Em breve"
-          className="mt-3 block w-full text-center text-sm text-muted-foreground/60 cursor-not-allowed"
+          className="mt-4 block w-full text-center text-sm text-muted-foreground/60 cursor-not-allowed"
         >
           Esqueci minha senha <span className="text-xs">(Em breve)</span>
         </button>
-        <Link to="/" className="mt-2 block text-center text-sm text-muted-foreground hover:text-foreground">
+
+        <Link to="/" className="mt-2 block text-center text-sm text-muted-foreground transition hover:text-foreground">
           Voltar
         </Link>
       </form>
@@ -316,61 +395,85 @@ function AdminBootstrap({ onOk }: { onOk: () => void }) {
     sessionStorage.setItem(AUTH_KEY, "1");
     sessionStorage.setItem(ACTOR_USER_KEY, email.trim());
     sessionStorage.setItem(ACTOR_PASS_KEY, pass);
+    sessionStorage.setItem(ACTOR_NAME_KEY, name.trim());
+    sessionStorage.setItem(ACTOR_ROLE_KEY, "super_admin");
     window.dispatchEvent(new Event("lupo-admin-auth-changed"));
     onOk();
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
-        <div className="mb-6 text-center">
-          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
-          <h1 className="text-xl font-extrabold">Bem-vindo ao BPInfo ERP</h1>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-xl sm:p-8">
+        <div className="mb-8 text-center">
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-4 h-12 w-auto sm:h-14" />
+          <h1 className="text-xl font-extrabold text-foreground">Bem-vindo ao BPInfo ERP</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Vamos criar o primeiro administrador do sistema.
           </p>
         </div>
 
-        <label className="mb-1 block text-sm font-semibold">Nome</label>
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => { setName(e.target.value); setError(""); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
-        />
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">Nome</label>
+            <div className="relative">
+              <User className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                autoFocus
+                value={name}
+                onChange={(e) => { setName(e.target.value); setError(""); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
 
-        <label className="mb-1 block text-sm font-semibold">E-mail</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => { setEmail(e.target.value); setError(""); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
-        />
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">E-mail</label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
 
-        <label className="mb-1 block text-sm font-semibold">Senha</label>
-        <input
-          type="password"
-          value={pass}
-          onChange={(e) => { setPass(e.target.value); setError(""); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
-        />
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">Senha</label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                type="password"
+                value={pass}
+                onChange={(e) => { setPass(e.target.value); setError(""); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
 
-        <label className="mb-1 block text-sm font-semibold">Confirmar senha</label>
-        <input
-          type="password"
-          value={confirmPass}
-          onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
-        />
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">Confirmar senha</label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                type="password"
+                value={confirmPass}
+                onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
 
-        {error && <p className="mb-3 text-sm font-semibold text-destructive">{error}</p>}
+        {error && <p className="mt-3 text-sm font-semibold text-destructive">{error}</p>}
 
         <button
           type="submit"
           disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3 text-lg font-bold text-brand-foreground disabled:opacity-60"
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-base font-bold text-brand-foreground transition hover:opacity-90 disabled:opacity-60"
         >
-          {busy && <Loader2 size={20} className="animate-spin" />}
+          {busy && <Loader2 size={18} className="animate-spin" />}
           {busy ? "Criando..." : "Criar administrador"}
         </button>
       </form>
@@ -413,23 +516,119 @@ function ForceChangePassword({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
-        <div className="mb-6 text-center">
-          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
-          <h1 className="text-xl font-extrabold">Defina sua nova senha</h1>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-3xl bg-card p-6 shadow-xl sm:p-8">
+        <div className="mb-8 text-center">
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-4 h-12 w-auto sm:h-14" />
+          <h1 className="text-xl font-extrabold text-foreground">Defina sua nova senha</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Por segurança, você precisa trocar sua senha temporária antes de continuar.
           </p>
         </div>
 
-        <label className="mb-1 block text-sm font-semibold">Nova senha</label>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">Nova senha</label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                autoFocus
+                type="password"
+                value={pass}
+                onChange={(e) => { setPass(e.target.value); setError(""); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold">Confirmar nova senha</label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+              <input
+                type="password"
+                value={confirmPass}
+                onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-11 pr-4 text-base transition focus:border-brand focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-sm font-semibold text-destructive">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-base font-bold text-brand-foreground transition hover:opacity-90 disabled:opacity-60"
+        >
+          {busy && <Loader2 size={18} className="animate-spin" />}
+          {busy ? "Salvando..." : "Salvar nova senha"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [currentPass, setCurrentPass] = useState("");
+  const [pass, setPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const actor = getAdminActor();
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!currentPass) { setError("Informe sua senha atual."); return; }
+    if (pass.length < 4) { setError("A nova senha precisa ter ao menos 4 caracteres."); return; }
+    if (pass !== confirmPass) { setError("As senhas não coincidem."); return; }
+    if (!actor) return;
+
+    setBusy(true);
+    const { error: err } = await supabase.rpc("admin_change_own_password", {
+      _email: actor.user,
+      _current_password: currentPass,
+      _new_password: pass,
+    });
+    setBusy(false);
+
+    if (err) {
+      setError("Senha atual incorreta ou algo deu errado. Tente novamente.");
+      return;
+    }
+
+    sessionStorage.setItem(ACTOR_PASS_KEY, pass);
+    toast.success("Senha alterada com sucesso");
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl"
+      >
+        <h3 className="mb-4 text-lg font-bold">Alterar senha</h3>
+
+        <label className="mb-1 block text-sm font-semibold">Senha atual</label>
         <input
           autoFocus
           type="password"
+          value={currentPass}
+          onChange={(e) => { setCurrentPass(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
+        />
+
+        <label className="mb-1 block text-sm font-semibold">Nova senha</label>
+        <input
+          type="password"
           value={pass}
           onChange={(e) => { setPass(e.target.value); setError(""); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
         />
 
         <label className="mb-1 block text-sm font-semibold">Confirmar nova senha</label>
@@ -437,19 +636,24 @@ function ForceChangePassword({ onDone }: { onDone: () => void }) {
           type="password"
           value={confirmPass}
           onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
-          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
         />
 
         {error && <p className="mb-3 text-sm font-semibold text-destructive">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3 text-lg font-bold text-brand-foreground disabled:opacity-60"
-        >
-          {busy && <Loader2 size={20} className="animate-spin" />}
-          {busy ? "Salvando..." : "Salvar nova senha"}
-        </button>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl border border-border px-4 py-2 font-semibold">
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2 font-semibold text-brand-foreground disabled:opacity-60"
+          >
+            {busy && <Loader2 size={16} className="animate-spin" />}
+            {busy ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
       </form>
     </div>
   );
