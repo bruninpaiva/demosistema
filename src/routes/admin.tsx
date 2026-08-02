@@ -1613,6 +1613,14 @@ function Dashboard() {
       )}
 
       <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
+        <h3 className="font-bold">Insights do BPInfo AI</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Em breve, observações automáticas sobre o desempenho do período — como quedas de conversão, lojas fora do
+          padrão ou vendedoras em destaque.
+        </p>
+      </section>
+
+      <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
         <h3 className="mb-4 text-lg font-bold">Não vendas por vendedora</h3>
         {noSaleByRep.length === 0 ? (
           <p className="text-muted-foreground">Sem não vendas no período.</p>
