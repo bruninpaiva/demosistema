@@ -869,6 +869,10 @@ function useDashboardMetrics(data: Attendance[]): DashboardMetrics {
   return useMemo(() => computeDashboardMetrics(data), [data]);
 }
 
+function formatBRL(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function StoreFilter({ storeId, setStoreId, stores }: { storeId: string; setStoreId: (s: string) => void; stores: Store[] }) {
   return (
     <div className="mb-4 flex items-center gap-2">
@@ -916,10 +920,15 @@ function DateRangeBar({ preset, setPreset, from, setFrom, to, setTo }: {
 // ------------ Dashboard ------------
 
 function Dashboard() {
+  const actor = getAdminActor();
   const [preset, setPreset] = useState<Preset>("hoje");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [storeId, setStoreId] = useState<string>(ALL_STORES);
+  // Gerentes abrem o Dashboard já filtrado na própria loja (decisão da Etapa 4.1);
+  // outros papéis continuam vendo "Todas as lojas" por padrão.
+  const [storeId, setStoreId] = useState<string>(() =>
+    actor && actor.role === "gerente" && actor.storeId ? actor.storeId : ALL_STORES,
+  );
   const { stores } = useStores();
   const { start, end } = useMemo(() => rangeFor(preset, from, to), [preset, from, to]);
   const { data, loading } = useAttendances(start, end, storeId);
@@ -931,13 +940,7 @@ function Dashboard() {
     supabase.from("no_sale_reasons").select("id,label,is_other").then(({ data }) => setReasons((data as any) ?? []));
   }, []);
 
-  const stats = useMemo(() => {
-    const total = data.length;
-    const sales = data.filter((a) => a.type === "sale");
-    const noSales = data.filter((a) => a.type === "no_sale");
-    const conversion = total > 0 ? (sales.length / total) * 100 : 0;
-    return { total, sales: sales.length, noSales: noSales.length, conversion };
-  }, [data]);
+  const metrics = useDashboardMetrics(data);
 
   const ranking = useMemo(() => {
     const map = new Map<string, { att: number; sales: number }>();
@@ -1020,10 +1023,10 @@ function Dashboard() {
       <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi title="Atendimentos" value={stats.total} />
-        <Kpi title="Vendas" value={stats.sales} accent="success" />
-        <Kpi title="Não vendas" value={stats.noSales} accent="destructive" />
-        <Kpi title="Conversão" value={`${stats.conversion.toFixed(1)}%`} accent="brand" />
+        <Kpi title="Faturamento" value={formatBRL(metrics.faturamento)} accent="brand" />
+        <Kpi title="Atendimentos" value={metrics.atendimentos} />
+        <Kpi title="Conversão" value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`} accent="success" />
+        <Kpi title="Ticket médio" value={formatBRL(metrics.ticketMedio)} />
       </div>
 
       {loading && <p className="mt-6 text-center text-muted-foreground">Carregando…</p>}
