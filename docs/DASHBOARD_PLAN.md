@@ -1,6 +1,21 @@
 # Projeto do Dashboard — Etapa 4.1
 
-> Documento de planejamento. **Nenhum código foi alterado para produzir isto** — é a base para aprovação antes da implementação. Escrito em 2026-08-02, com base em leitura direta do schema (`supabase/migrations/`), do código atual (`src/routes/admin.tsx`, `src/components/*Tab.tsx`, `src/lib/ai/chat.functions.ts`) e do skill de dataviz do projeto.
+> Documento de planejamento. Escrito em 2026-08-02, com base em leitura direta do schema (`supabase/migrations/`), do código atual (`src/routes/admin.tsx`, `src/components/*Tab.tsx`, `src/lib/ai/chat.functions.ts`) e do skill de dataviz do projeto.
+
+---
+
+## Revisão de produto — rodada 2 (correção antes de continuar)
+
+Depois da primeira aprovação, os Commits 1–13 foram implementados e validados (ver seção 10). Na revisão, veio uma correção de produto importante que muda a fonte de dado de dois KPIs e de parte do gráfico de Tendência — por isso este documento foi atualizado **antes** de qualquer novo commit, como pedido.
+
+**O fato que mudou tudo**: confirmei no código do kiosk (`src/routes/loja.$storeId.vendedora.$repId.index.tsx:85-103`, função `registerSale`) que fechar um atendimento como venda é um único toque no botão "VENDA REALIZADA" — não existe nenhum campo, modal ou formulário em nenhum lugar do app que peça um valor monetário. `attendances.amount` **nunca é preenchido pelo uso real do sistema**; na prática é sempre `null`. O único faturamento real do BPInfo vem da planilha de comissão importada mensalmente (`commission_rows.liquido`), e essa tabela guarda **um único número agregado por vendedora por mês** — não existe granularidade diária em lugar nenhum do banco.
+
+Isso muda três coisas neste documento, detalhadas nas seções 2 e 4 abaixo:
+1. **Faturamento e Ticket Médio** deixam de aparecer para Hoje/Ontem/Últimos 7 dias (não existe dado nenhum pra mostrar nesses períodos) e passam a ser buscados de `commission_rows`, não de `attendances.amount`, quando o período for Este mês/Personalizado **e** a competência já tiver sido importada para a(s) loja(s) em escopo.
+2. **Dois novos KPIs operacionais** (Tempo médio de atendimento, Minutos em pausa) ocupam o lugar de Faturamento/Ticket Médio sempre que esse dado não existir — seja por ser um período curto, seja por a comissão daquele mês ainda não ter sido importada.
+3. **A Tendência perde a opção "Faturamento" definitivamente** (não só nos períodos curtos) — como a comissão é um número por mês, não por dia, não existe "tendência de faturamento" possível em nenhuma granularidade. Ganha "Tempo médio de atendimento" no lugar.
+
+Motivos de não venda (seção 4) e Ranking das lojas/vendedoras (seções 4.2 e 9) foram revisados e **aprovados exatamente como estavam** — sem mudança.
 
 ---
 
@@ -10,7 +25,7 @@ Antes de propor qualquer coisa nova, vale registrar o que já existe, porque o p
 
 - **Já existe uma aba "Dashboard"** (`admin.tsx:887-1152`). Ela filtra por loja + período (Hoje/Ontem/Últimos 7 dias/Este mês/Personalizado — o mesmo padrão usado em "Por vendedora", "Pausas" e "Exportar") e mostra: 4 KPIs (Atendimentos, Vendas, Não vendas, Conversão), ranking de vendedoras, gráfico de motivos de não-venda, gráfico de atendimentos por hora, detalhamento de não-vendas por vendedora e uma tabela crua com as últimas 200 não-vendas.
 - **O que falta nela, e é o motivo desta etapa existir**: não mostra **faturamento** (nem em R$, nem ticket médio), não compara **loja com loja**, não mostra **nada de pausas/comissão/metas**, e não tem **nenhuma informação "agora"** (fila atual, quem está atendendo, quem está em pausa). Ou seja: hoje ela documenta o passado imediato de vendas/não-vendas — não dá a "temperatura" completa do negócio.
-- **Faturamento já é calculável** (soma de `attendances.amount` onde `type='sale'`) — só não está exposto em nenhuma tela hoje; só existe dentro da ferramenta de IA (`chat.functions.ts`, função `attendance_summary`), que já faz esse cálculo.
+- **Faturamento NÃO é calculável a partir de `attendances.amount`** — essa coluna existe no schema, mas o fluxo real do kiosk (`loja.$storeId.vendedora.$repId.index.tsx:85-103`) nunca pede nem grava um valor ao fechar uma venda; na prática essa coluna é sempre `null`. O único faturamento real do sistema é o `commission_rows.liquido`, populado manualmente uma vez por mês, por vendedora, quando o cliente importa a planilha de comissão na aba Comissão — sem granularidade diária. (Correção feita na revisão de produto — ver "Revisão de produto — rodada 2" no topo do documento; a ferramenta de IA `attendance_summary` também soma `attendances.amount` hoje e tem o mesmo problema, fora do escopo desta etapa.)
 - **"Fila agora" e "quem está atendendo" já são deriváveis** das tabelas atuais (`sales_reps.status`, `attendances` com `status='open'`) — o app da loja (kiosk) já escreve esse estado a cada ação da vendedora. Só não existe nenhuma tela de admin que leia isso ao vivo — nem polling, nem Supabase Realtime existem hoje em nenhum lugar do app.
 - **"Metas" hoje é só a Meta/Super Meta/Hiper Meta mensal por loja**, cadastrada manualmente na aba Comissão (`commission_imports.meta_amount` + `commission_config` jsonb). Não existe meta diária, meta por vendedora, nem meta derivada automaticamente do histórico de vendas.
 - **Não existe "grupo de lojas"** no schema — `stores` não tem coluna de região/grupo. Isso afeta o filtro pedido na seção 3.
@@ -83,18 +98,42 @@ Links para "Por vendedora", "Pausas" e "Comissão" — "quer ver mais detalhe? v
 - **"Não vendas" também não vira card** — é o complemento de vendas, mesma lógica.
 - **Metas/atingimento não entra aqui** — hoje é só mensal e cadastrado manualmente (seção 0), então misturar com KPIs diários/do-período seria comparar coisas de naturezas diferentes. Atingimento de meta mensal continua sendo assunto da aba Comissão.
 
-**Os 4 KPIs escolhidos** — cada um responde uma pergunta diferente, sem sobreposição:
+### Os 4 KPIs mudam conforme o período — porque a fonte do dado muda
+
+Esse é o ponto corrigido na rodada 2. Faturamento e Ticket Médio só existem quando vêm da comissão importada (seção 0) — então **não fazem sentido em todo período**, e a tela precisa admitir isso em vez de mostrar um "R$ 0,00" enganoso.
+
+**Regra**: Faturamento e Ticket Médio só aparecem quando **todas** as condições abaixo são verdadeiras:
+1. o período selecionado é **Este mês** ou **Personalizado** — nunca Hoje/Ontem/Semana (não existe faturamento diário, ponto final);
+2. no caso de Personalizado, o intervalo escolhido cabe dentro de um único mês civil (comissão não tem granularidade menor que isso — um período que atravessa dois meses não tem como ser somado de forma correta);
+3. existe pelo menos uma competência de comissão **importada de verdade** (não basta a competência "existir" — `commission_imports` pode ter uma linha vazia criada em "Nova competência" antes do upload; a checagem certa, que a ferramenta de IA já faz em `commission_month_summary`, é `commission_imports` **com** `commission_rows` associados) para o mês/ano do período, dentro do escopo de loja selecionado.
+
+**Quando as 3 condições valem**: mostra Faturamento (soma de `commission_rows.liquido` das lojas em escopo) e Ticket Médio (mesmo cálculo que a aba Comissão já usa: `liquido total / vendas total`, não uma média simples). Se "Todas as lojas" está selecionado e só parte delas já importou aquele mês, soma só as que têm dado e mostra uma nota discreta ("dados de 2 de 3 lojas") — mostrar um total silenciosamente parcial seria o tipo de número "bonito, mas enganoso" que essa etapa quer evitar.
+
+**Quando qualquer uma das 3 falha** (período curto, ou mês/personalizado sem comissão importada ainda) — Faturamento e Ticket Médio saem da tela e entram dois KPIs operacionais no lugar, sempre calculáveis a partir de `attendances`/`rep_breaks`, sem depender de nada importado:
 
 | KPI | Pergunta que responde | Fonte |
 |---|---|---|
-| **Faturamento** | Quanto entrou? | soma de `attendances.amount` onde `type='sale'` |
+| **Tempo médio de atendimento** | Estamos atendendo rápido ou devagar? | média de `closed_at - created_at` dos atendimentos fechados no período — coluna já existe e já é sempre preenchida ao fechar (venda ou não-venda), só nunca foi calculada em nenhuma tela |
+| **Minutos em pausa** | Quanto tempo de operação perdemos com pausa? | soma de `rep_breaks` (excluindo o sentinela "Fora horário de trabalho") no período, no escopo de loja/vendedor selecionado |
+
+Junto com os dois que **sempre** aparecem, em qualquer período:
+
+| KPI | Pergunta que responde | Fonte |
+|---|---|---|
 | **Atendimentos** | Qual foi o movimento? | contagem de `attendances` fechados |
 | **Conversão** | Desse movimento, quanto viramos venda? | vendas / atendimentos |
-| **Ticket médio** | Cada venda vale quanto, em média? | faturamento / vendas |
 
-Cada card mostra também um **delta vs. período anterior equivalente** (▲/▼ + %, ou pontos percentuais no caso da Conversão), só quando o gestor ativa o comparador de período (seção 3) — por padrão fica oculto, pra não forçar uma segunda consulta em toda visita à tela.
+Ou seja, os 4 cards são sempre **Atendimentos + Conversão** mais **dois outros**, que trocam de identidade conforme o dado disponível:
 
-Ordem visual: Faturamento primeiro e com destaque maior (é a pergunta que qualquer dono de negócio faz primeiro), os outros três em tamanho igual ao lado.
+| Período | 3º e 4º cards |
+|---|---|
+| Hoje / Ontem / Últimos 7 dias | Tempo médio de atendimento + Minutos em pausa |
+| Este mês / Personalizado, **com** comissão importada no escopo | Faturamento + Ticket médio |
+| Este mês / Personalizado, **sem** comissão importada no escopo | Tempo médio de atendimento + Minutos em pausa (mesmo conjunto do período curto) |
+
+Cada card mostra também um **delta vs. período anterior equivalente** (▲/▼ + %, ou pontos percentuais no caso da Conversão), só quando o gestor ativa o comparador de período (seção 3) — por padrão fica oculto, pra não forçar uma segunda consulta em toda visita à tela. Faturamento/Ticket Médio, quando aparecem, comparam com o mês anterior (não com "o período de mesma duração imediatamente antes", que não faz sentido pra um número mensal).
+
+Ordem visual: quando Faturamento está presente, ele vem primeiro e com destaque maior (é a pergunta que qualquer dono de negócio faz primeiro); no conjunto operacional, Atendimentos vem primeiro por ser o mais "de contexto" antes dos outros.
 
 ---
 
@@ -115,7 +154,14 @@ Ordem visual: Faturamento primeiro e com destaque maior (é a pergunta que qualq
 Só dois gráficos principais — e um mini-ranking textual que não conta como "gráfico" de verdade.
 
 ### 4.1 Tendência (linha)
-Um único gráfico com um **seletor de métrica** (Faturamento | Atendimentos | Conversão — uma de cada vez), nunca duas escalas diferentes no mesmo eixo. Isso segue a regra mais importante de visualização de dados usada no projeto: **nunca combinar duas métricas de escalas diferentes (R$ e contagem, por exemplo) no mesmo gráfico com dois eixos Y** — é o erro nº1 de gráfico e o dashboard atual já tangencia isso ao colocar vendas/não-vendas juntas (funciona ali porque as duas são "contagem", mesma unidade — mas Faturamento e Atendimentos não são).
+
+**Correção da rodada 2: "Faturamento" sai do seletor — em definitivo, não só nos períodos curtos.** Uma linha de tendência precisa de um ponto por dia (ou por hora); a comissão é um número por mês inteiro, sem quebra diária — não existe forma de desenhar essa linha com o dado que o sistema realmente tem, em nenhum período. Não é uma limitação temporária de Hoje/Ontem/Semana, é estrutural: mesmo olhando "Este mês" inteiro com a comissão já importada, o máximo que se sabe é o total do mês — não como ele se distribuiu dia a dia.
+
+O gráfico passa a ter um **seletor de 3 métricas, sempre as mesmas em qualquer período** (nunca duas escalas diferentes no mesmo eixo — regra mais importante de visualização de dados usada no projeto):
+
+- **Atendimentos** — volume, contagem.
+- **Conversão** — %.
+- **Tempo médio de atendimento** — minutos, o mesmo cálculo do KPI operacional da seção 2 (`closed_at - created_at`), agora visto ao longo do tempo em vez de só como número único do período. Substitui o espaço que "Faturamento" ocupava, com uma métrica que de fato existe todo santo dia.
 
 - Se o período é **Hoje/Ontem** → granularidade por hora (reaproveita o bucket 8h-22h que já existe).
 - Se o período é **semana/mês/personalizado** → granularidade por dia.
@@ -123,12 +169,14 @@ Um único gráfico com um **seletor de métrica** (Faturamento | Atendimentos | 
 Por que um seletor em vez de três gráficos fixos? Porque três gráficos de tendência empilhados é exatamente o "encher a tela de números" que foi pedido pra evitar — a maioria das visitas ao dashboard só precisa de uma métrica por vez, e quem quer ver as três troca o seletor em um clique.
 
 ### 4.2 Ranking de lojas (barra horizontal)
-Barra horizontal, ordenada, uma loja por linha, usando a **mesma métrica selecionada no gráfico de tendência** (Faturamento, Atendimentos ou Conversão) — assim os dois gráficos sempre contam a mesma história, só que um no tempo e outro por loja. Esse gráfico **não existe hoje** e é a peça que mais falta: hoje, com "todas as lojas" selecionado, o dashboard atual só agrega tudo junto e esconde completamente que a Loja A pode estar arrasando enquanto a Loja B não vende nada.
+Barra horizontal, ordenada, uma loja por linha, usando a **mesma métrica selecionada no gráfico de tendência** (agora Atendimentos, Conversão ou Tempo médio de atendimento — herda a correção acima automaticamente, já que reaproveita o mesmo seletor) — assim os dois gráficos sempre contam a mesma história, só que um no tempo e outro por loja. Esse gráfico **não existe hoje** e é a peça que mais falta: hoje, com "todas as lojas" selecionado, o dashboard atual só agrega tudo junto e esconde completamente que a Loja A pode estar arrasando enquanto a Loja B não vende nada. Aprovado na revisão sem mudanças além dessa herança.
 
 Esse gráfico só aparece quando o filtro de loja está em "Todas as lojas" — se uma loja específica já está selecionada, comparar "ela com ela mesma" não faz sentido, e o espaço vira o mini-ranking de vendedoras daquela loja (mesmo componente, dado diferente — ver `RankingCard` na seção 9).
 
+**Não implementado nesta etapa, registrado como ideia futura**: quando existir comissão importada para o mês, dado que a comparação por Faturamento entre lojas *é* válida nesse caso específico (é uma soma de totais mensais reais, não uma tendência), poderia valer a pena um ranking de lojas por Faturamento mensal à parte — um gráfico "instantâneo" (sem tendência), não um substituto do gráfico acima. Fica registrado, não desenhado em detalhe, pra não expandir o escopo desta correção.
+
 ### O que fica de fora dos gráficos "grandes"
-- **Motivos de não-venda**: continua existindo, mas como uma lista compacta de texto (top 3, com contagem) ao lado dos rankings — não como um gráfico de barra ocupando um card inteiro como é hoje. Motivo: é informação de segundo nível (explica a Conversão, não é a Conversão) — quem quer o detalhe completo já tem a aba "Motivos".
+- **Motivos de não-venda**: continua existindo, mas como uma lista compacta de texto (top 3, com contagem) ao lado dos rankings — não como um gráfico de barra ocupando um card inteiro como é hoje. Motivo: é informação de segundo nível (explica a Conversão, não é a Conversão) — quem quer o detalhe completo já tem a aba "Motivos". **Reconfirmado na revisão de produto**: só o Top Motivos fica no Dashboard — nenhuma listagem detalhada de não-vendas (por vendedora ou histórico bruto) volta pra essa tela; esse detalhe continua sendo assunto exclusivo das telas específicas ("Por vendedora"/"Motivos").
 - **Não-vendas por vendedora / histórico bruto de não-vendas**: saem do Dashboard. Isso é material de auditoria/detalhe, não de "entenda em 5 segundos" — continua acessível pela aba "Por vendedora".
 
 ---
@@ -227,11 +275,24 @@ Celular não é foco desta etapa (o pedido é Desktop + Tablet) — o layout de 
 12. **Responsividade tablet** — ajustes de grid por cima do que já foi construído nos commits anteriores.
 13. **Remoção do conteúdo antigo que virou redundante** (tabela crua de histórico de não-vendas, detalhamento de não-vendas por vendedora) — só depois que os itens acima já cobrem esse valor de outra forma, e só se, na revisão, ficar confirmado que ninguém vai sentir falta na aba principal (o conteúdo continua acessível via "Por vendedora"/"Motivos").
 
+**Commits 1–13 concluídos e validados.** Os itens abaixo são a correção da rodada 2 (seções 2 e 4), a implementar depois desta aprovação:
+
+14. **Hook de Faturamento/Ticket Médio a partir de `commission_rows`** (não mais `attendances.amount`) + checagem de "competência importada de verdade" (`commission_imports` com `commission_rows` associados, não só a linha existir) para a(s) loja(s) em escopo. Validação: comparar o número com o total que a aba Comissão já mostra pra mesma competência — devem bater exatamente.
+15. **Novos KPIs operacionais — Tempo médio de atendimento e Minutos em pausa** — substituindo Faturamento/Ticket Médio quando o período for curto ou quando a competência do mês ainda não tiver comissão importada. Validação: calcular manualmente `closed_at - created_at` de uma amostra conhecida e comparar; conferir minutos de pausa contra o que a aba Pausas já mostra pro mesmo período.
+16. **Troca condicional dos 3º/4º KPIs conforme período + disponibilidade de comissão**, com a nota "dados de X de Y lojas" quando a soma for parcial em "Todas as lojas". Validação: forçar os 3 cenários (período curto; mês com comissão importada; mês sem comissão importada) e conferir que os KPIs certos aparecem em cada um.
+17. **Remover "Faturamento" do seletor da Tendência definitivamente; adicionar "Tempo médio de atendimento"** como terceira métrica (Atendimentos/Conversão/Tempo médio, sempre as mesmas 3, em qualquer período). Validação: girar entre as 3 métricas, conferir granularidade hora/dia como já validado nos Commits 5-6, sem "Faturamento" em nenhum estado.
+18. **Ranking de lojas**: nenhuma mudança de código esperada (herda a correção do Commit 17 automaticamente, por reaproveitar o mesmo seletor) — só validar visualmente que "Faturamento" não aparece mais como opção ali.
+
 ---
 
-## Pontos em aberto para sua decisão antes de eu implementar
+## Pontos em aberto — histórico (rodada 1, já resolvidos)
 
-1. **"Gerente" deveria abrir o Dashboard já filtrado na própria loja por padrão?** Hoje nenhuma tela faz isso automaticamente — seria a primeira vez. Recomendo que sim, mas é uma decisão de produto, não técnica.
-2. **Limiares dos alertas** (5 atendimentos simultâneos, 60/90 minutos sem venda/movimento, 10 pontos de queda de conversão) são meus palpites iniciais — provavelmente precisam ser calibrados com dado real de uma ou duas lojas depois de implementados, não adivinhados agora.
-3. **Horário comercial fixo para os alertas de "sem movimento"** — proponho um horário global configurável (ex. 9h–20h) em vez de esperar uma migration nova em `stores`. Confirma que serve por agora?
-4. **"Grupo de lojas"** fica fora desta etapa por falta de coluna no schema — ok deixar como item de uma etapa futura?
+1. ~~"Gerente" deveria abrir o Dashboard já filtrado na própria loja por padrão?~~ **Aprovado e implementado** (Commit 3).
+2. ~~Limiares dos alertas são palpites iniciais.~~ **Aceito como está** — seguem sendo palpites calibráveis depois, não bloqueiam a implementação (Commit 10).
+3. ~~Horário comercial fixo (9h–20h) em vez de coluna nova em `stores`.~~ **Aprovado e implementado** (Commit 10).
+4. ~~"Grupo de lojas" fica fora desta etapa.~~ **Confirmado oficialmente fora de escopo** — nenhuma ação relacionada nesta etapa.
+
+## Pontos em aberto — rodada 2 (novos, desta correção)
+
+5. **Faturamento parcial em "Todas as lojas"**: quando só parte das lojas em escopo já tem a comissão do mês importada, proponho somar só as que têm dado e avisar discretamente ("dados de 2 de 3 lojas") em vez de esconder o card inteiro. Alternativa mais conservadora: só mostrar Faturamento/Ticket Médio quando **todas** as lojas em escopo tiverem importado — mais simples de implementar e sem risco de mal-entendido sobre "quanto falta", ao custo de esconder o dado com mais frequência. Qual prefere?
+6. **Personalizado que atravessa mais de um mês civil**: proponho simplesmente não mostrar Faturamento/Ticket Médio nesse caso (regra 2 da seção 2) em vez de tentar somar comissão de meses diferentes. Confirma que serve, ou prefere alguma outra regra?
