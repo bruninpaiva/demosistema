@@ -273,7 +273,7 @@ function parseBRLInput(formatted: string): number {
 /* ============================================================
    Main component
    ============================================================ */
-export default function CommissionTab() {
+export default function CommissionTab({ autoOpenImportId }: { autoOpenImportId?: string } = {}) {
   const [actorRole, setActorRole] = useState<"admin" | "gerente" | null>(null);
   const [actorStoreId, setActorStoreId] = useState<string | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
@@ -281,6 +281,7 @@ export default function CommissionTab() {
   const [loaded, setLoaded] = useState<LoadedComp | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const autoOpenedRef = useRef<string | null>(null);
 
   const actor = getAdminActor();
 
@@ -359,6 +360,14 @@ export default function CommissionTab() {
     } finally { setBusy(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stores, history]);
+
+  useEffect(() => {
+    if (!autoOpenImportId || actorRole === null) return;
+    if (autoOpenedRef.current === autoOpenImportId) return;
+    autoOpenedRef.current = autoOpenImportId;
+    openComp(autoOpenImportId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenImportId, actorRole]);
 
   const deleteComp = useCallback(async (id: string) => {
     if (!actor) return;

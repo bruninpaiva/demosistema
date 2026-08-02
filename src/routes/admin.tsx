@@ -110,8 +110,10 @@ function AdminPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [perRepFocusId, setPerRepFocusId] = useState<string | undefined>(undefined);
   const [teamTabFocusStoreId, setTeamTabFocusStoreId] = useState<string | undefined>(undefined);
+  const [commissaoFocusImportId, setCommissaoFocusImportId] = useState<string | undefined>(undefined);
   const goToRep = (repId: string) => { setPerRepFocusId(repId); setTab("por-vendedora"); };
   const goToTeamTab = (storeId: string) => { setTeamTabFocusStoreId(storeId); setTab("vendedoras"); };
+  const goToCommissao = (importId: string) => { setCommissaoFocusImportId(importId); setTab("comissao"); };
   const [authed, setAuthed] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(AUTH_KEY) === "1"
   );
@@ -283,12 +285,12 @@ function AdminPage() {
         {tab === "dashboard" && <Dashboard />}
         {tab === "por-vendedora" && <PerRepTab initialRepId={perRepFocusId} />}
         {tab === "pausas" && <BreaksTab />}
-        {tab === "lojas" && <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} />}
+        {tab === "lojas" && <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} />}
         {tab === "vendedoras" && <SalesRepsTab initialStoreId={teamTabFocusStoreId} />}
         {tab === "motivos" && <ReasonsTab />}
         {tab === "usuarios" && <UsersTab />}
         {tab === "promocoes" && <PromotionsTab />}
-        {tab === "comissao" && <CommissionTab />}
+        {tab === "comissao" && <CommissionTab autoOpenImportId={commissaoFocusImportId} />}
         {tab === "exportar" && <ExportTab />}
         {tab === "conversor" && <BarcodeConverterTab />}
       </main>
@@ -2156,6 +2158,7 @@ function StoreManagementCenter({
   onBack,
   onOpenRep,
   onOpenTeamTab,
+  onOpenCommissao,
 }: {
   store: Store;
   stores: Store[];
@@ -2163,6 +2166,7 @@ function StoreManagementCenter({
   onBack: () => void;
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
+  onOpenCommissao: (importId: string) => void;
 }) {
   const [preset, setPreset] = useState<Preset>("hoje");
   const [from, setFrom] = useState("");
@@ -2214,15 +2218,79 @@ function StoreManagementCenter({
         end={end}
       />
       <StoreTeamSection store={store} start={start} end={end} onOpenRep={onOpenRep} onOpenTeamTab={onOpenTeamTab} />
-      <EmptyStoreSection
-        title="Histórico recente"
-        description="Em breve, exibe os últimos atendimentos e eventos relevantes da loja."
-      />
+      <StoreHistorySection store={store} onOpenCommissao={onOpenCommissao} />
       <EmptyStoreSection
         title="Configurações da loja"
         description="Em breve, concentra os dados simples da loja que podem ser editados aqui."
       />
     </div>
+  );
+}
+
+const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+type CommissionHistoryItem = { id: string; store_id: string; month: number; year: number; closed_at: string | null };
+
+function useStoreCommissionHistory(storeId: string) {
+  const [items, setItems] = useState<CommissionHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const actor = getAdminActor();
+
+  useEffect(() => {
+    let alive = true;
+    if (!actor) { setLoading(false); return; }
+    setLoading(true);
+    supabase
+      .rpc("list_commission_imports" as never, { _actor: actor.user, _actor_password: actor.pass } as never)
+      .then(({ data, error }: { data: unknown; error: unknown }) => {
+        if (!alive) return;
+        if (error) { setItems([]); setLoading(false); return; }
+        const all = (data as CommissionHistoryItem[]) ?? [];
+        setItems(
+          all
+            .filter((h) => h.store_id === storeId)
+            .sort((a, b) => (b.year - a.year) || (b.month - a.month))
+            .slice(0, 12)
+        );
+        setLoading(false);
+      });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, actor?.user, actor?.pass]);
+
+  return { items, loading };
+}
+
+function StoreHistorySection({ store, onOpenCommissao }: { store: Store; onOpenCommissao: (importId: string) => void }) {
+  const { items, loading } = useStoreCommissionHistory(store.id);
+
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <h4 className="mb-4 text-base font-bold text-foreground">Histórico</h4>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Carregando histórico...</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhuma competência de comissão importada para esta loja ainda.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {items.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => onOpenCommissao(c.id)}
+              className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-3 text-left transition hover:border-brand hover:shadow-sm ${
+                c.closed_at ? "border-emerald-300 bg-emerald-50" : "border-border bg-background"
+              }`}
+            >
+              <div className="flex w-full items-center justify-between">
+                <span className="font-semibold">{MESES_ABREV[c.month - 1]}/{c.year}</span>
+                {c.closed_at ? <Lock size={14} className="text-emerald-600" /> : <Unlock size={14} className="text-amber-500" />}
+              </div>
+              <span className="text-xs text-muted-foreground">Abrir na Comissão</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2327,9 +2395,11 @@ function StoreTeamSection({
 function StoresTab({
   onOpenRep,
   onOpenTeamTab,
+  onOpenCommissao,
 }: {
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
+  onOpenCommissao: (importId: string) => void;
 }) {
   const { stores, reload } = useStores();
   const [name, setName] = useState("");
@@ -2398,6 +2468,7 @@ function StoresTab({
         onBack={() => setSelectedStoreId(null)}
         onOpenRep={onOpenRep}
         onOpenTeamTab={onOpenTeamTab}
+        onOpenCommissao={onOpenCommissao}
       />
     );
   }
