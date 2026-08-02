@@ -1343,42 +1343,6 @@ function Dashboard() {
     })).sort((a, b) => b.qtd - a.qtd);
   }, [filteredData, reasons]);
 
-  const noSaleDetails = useMemo(() => {
-    return filteredData
-      .filter((a) => a.type === "no_sale")
-      .map((a) => {
-        const reason = reasons.find((r) => r.id === a.reason_id);
-        const isOther = reason?.is_other ?? false;
-        return {
-          id: a.id,
-          created_at: a.created_at,
-          rep: reps.find((r) => r.id === a.sales_rep_id)?.name ?? "—",
-          reason: reason?.label ?? "—",
-          isOther,
-          description: a.reason_other_text ?? "",
-        };
-      });
-  }, [filteredData, reasons, reps]);
-
-  const noSaleByRep = useMemo(() => {
-    const map = new Map<string, { rep: string; total: number; reasons: Map<string, number>; others: string[] }>();
-    for (const d of noSaleDetails) {
-      const cur = map.get(d.rep) ?? { rep: d.rep, total: 0, reasons: new Map<string, number>(), others: [] as string[] };
-      cur.total++;
-      cur.reasons.set(d.reason, (cur.reasons.get(d.reason) ?? 0) + 1);
-      if (d.isOther && d.description) cur.others.push(d.description);
-      map.set(d.rep, cur);
-    }
-    return Array.from(map.values())
-      .map((v) => ({
-        rep: v.rep,
-        total: v.total,
-        reasons: Array.from(v.reasons.entries()).sort((a, b) => b[1] - a[1]),
-        others: v.others,
-      }))
-      .sort((a, b) => b.total - a.total);
-  }, [noSaleDetails]);
-
   const [trendMetric, setTrendMetric] = useState<TrendMetric>("faturamento");
   const isHourlyTrend = preset === "hoje" || preset === "ontem";
 
@@ -1621,82 +1585,6 @@ function Dashboard() {
           Em breve, observações automáticas sobre o desempenho do período — como quedas de conversão, lojas fora do
           padrão ou vendedoras em destaque.
         </p>
-      </section>
-
-      <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
-        <h3 className="mb-4 text-lg font-bold">Não vendas por vendedora</h3>
-        {noSaleByRep.length === 0 ? (
-          <p className="text-muted-foreground">Sem não vendas no período.</p>
-        ) : (
-          <div className="space-y-4">
-            {noSaleByRep.map((r) => (
-              <div key={r.rep} className="rounded-xl border border-border p-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="text-lg font-bold">{r.rep}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {r.total} não {r.total === 1 ? "venda" : "vendas"}
-                  </p>
-                </div>
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {r.reasons.map(([label, qtd]) => (
-                    <li
-                      key={label}
-                      className="rounded-full bg-destructive/10 px-3 py-1 text-xs font-semibold text-destructive"
-                    >
-                      {label} · {qtd}
-                    </li>
-                  ))}
-                </ul>
-                {r.others.length > 0 && (
-                  <div className="mt-3 rounded-lg bg-muted/60 p-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                      Descrições em "Outro"
-                    </p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-                      {r.others.map((desc, i) => (
-                        <li key={i}>{desc}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
-        <h3 className="mb-4 text-lg font-bold">Histórico de não vendas</h3>
-        {noSaleDetails.length === 0 ? (
-          <p className="text-muted-foreground">Sem não vendas no período.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Data/hora</th>
-                  <th className="px-3 py-2">Vendedora</th>
-                  <th className="px-3 py-2">Motivo</th>
-                  <th className="px-3 py-2">Descrição</th>
-                </tr>
-              </thead>
-              <tbody>
-                {noSaleDetails.slice(0, 200).map((d) => (
-                  <tr key={d.id} className="border-t border-border">
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {new Date(d.created_at).toLocaleString("pt-BR")}
-                    </td>
-                    <td className="px-3 py-2 font-semibold">{d.rep}</td>
-                    <td className="px-3 py-2">{d.reason}</td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {d.isOther ? d.description || <span className="italic">—</span> : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </section>
     </div>
   );
