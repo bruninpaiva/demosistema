@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "BPInfo ERP" },
+      { title: "BP Demo" },
       { name: "description", content: "Selecione a loja para começar" },
     ],
   }),
@@ -111,10 +111,10 @@ function StorePicker() {
           <div className="flex items-center gap-2.5">
             <img
               src="/bpinfo-logo.jpg"
-              alt="BPInfo ERP"
+              alt="BP Demo"
               className="h-8 w-8 rounded-lg object-cover"
             />
-            <span className="text-sm font-semibold tracking-tight text-foreground">BPInfo ERP</span>
+            <span className="text-sm font-semibold tracking-tight text-foreground">BP Demo</span>
             <span
               className={`ml-1 h-1.5 w-1.5 rounded-full ${isOnline ? "bg-success" : "bg-muted-foreground/40"}`}
               title={isOnline ? "Conectado" : "Sem conexão"}
@@ -184,7 +184,7 @@ function StorePicker() {
               Vamos configurar sua primeira loja
             </h1>
             <p className="mb-6 text-sm text-muted-foreground">
-              O BPInfo ERP ainda não tem nenhuma loja cadastrada. Um administrador pode configurar
+              O BP Demo ainda não tem nenhuma loja cadastrada. Um administrador pode configurar
               isso em poucos minutos pelo painel de gestão.
             </p>
             <Link

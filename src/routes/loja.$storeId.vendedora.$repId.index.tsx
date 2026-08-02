@@ -21,8 +21,15 @@ function ActionPage() {
   const [name, setName] = useState<string>("");
   const [open, setOpen] = useState<OpenAttendance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   const [startingNew, setStartingNew] = useState(false);
+
+  // Re-renderiza periodicamente só para manter "há X min" atualizado em tela.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const loadOpen = async () => {
     const { data } = await supabase
@@ -76,13 +83,17 @@ function ActionPage() {
   };
 
   const registerSale = async (attendanceId: string) => {
-    if (closingId) return;
-    setClosingId(attendanceId);
+    if (closingIds.has(attendanceId)) return;
+    setClosingIds((prev) => new Set(prev).add(attendanceId));
     const { error } = await supabase
       .from("attendances")
       .update({ type: "sale", status: "closed", closed_at: new Date().toISOString() })
       .eq("id", attendanceId);
-    setClosingId(null);
+    setClosingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(attendanceId);
+      return next;
+    });
     if (error) {
       toast.error("Erro ao registrar. Tente novamente.");
       return;
@@ -100,7 +111,28 @@ function ActionPage() {
   };
 
   if (loading) {
-    return <p className="p-8 text-center text-muted-foreground">Carregando…</p>;
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground shadow-md">
+          <div className="rounded-lg p-2">
+            <ArrowLeft size={24} className="opacity-40" />
+          </div>
+          <div>
+            <p className="text-xs opacity-80">Vendedora</p>
+            <div className="mt-1 h-6 w-32 animate-pulse rounded bg-white/20" />
+          </div>
+        </header>
+        <main className="flex-1 p-4 md:p-8">
+          <div className="mx-auto max-w-3xl rounded-3xl border-2 border-border bg-card p-4 shadow-sm">
+            <div className="mb-3 h-4 w-40 animate-pulse rounded bg-muted" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="min-h-[160px] animate-pulse rounded-2xl bg-muted" />
+              <div className="min-h-[160px] animate-pulse rounded-2xl bg-muted" />
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -138,16 +170,16 @@ function ActionPage() {
                 <button
                   type="button"
                   onClick={() => registerSale(att.id)}
-                  disabled={closingId === att.id}
+                  disabled={closingIds.has(att.id)}
                   className="flex flex-col items-center justify-center rounded-2xl bg-success text-success-foreground shadow-xl transition active:scale-[0.98] hover:brightness-110 min-h-[160px] disabled:opacity-70"
                 >
-                  {closingId === att.id ? (
+                  {closingIds.has(att.id) ? (
                     <Loader2 className="mb-3 animate-spin" size={64} strokeWidth={1.5} />
                   ) : (
                     <ShoppingBag className="mb-3" size={64} strokeWidth={1.5} />
                   )}
                   <span className="text-xl md:text-2xl font-extrabold tracking-tight">
-                    {closingId === att.id ? "REGISTRANDO…" : "VENDA REALIZADA"}
+                    {closingIds.has(att.id) ? "REGISTRANDO…" : "VENDA REALIZADA"}
                   </span>
                 </button>
 
@@ -155,7 +187,10 @@ function ActionPage() {
                   to="/loja/$storeId/vendedora/$repId/nao-vendeu"
                   params={{ storeId, repId }}
                   search={{ attendanceId: att.id }}
-                  className="flex flex-col items-center justify-center rounded-2xl bg-destructive text-destructive-foreground shadow-xl transition active:scale-[0.98] hover:brightness-110 min-h-[160px]"
+                  aria-disabled={closingIds.has(att.id)}
+                  className={`flex flex-col items-center justify-center rounded-2xl bg-destructive text-destructive-foreground shadow-xl transition active:scale-[0.98] hover:brightness-110 min-h-[160px] ${
+                    closingIds.has(att.id) ? "pointer-events-none opacity-50" : ""
+                  }`}
                 >
                   <XCircle className="mb-3" size={64} strokeWidth={1.5} />
                   <span className="text-xl md:text-2xl font-extrabold tracking-tight">NÃO VENDEU</span>
@@ -170,9 +205,10 @@ function ActionPage() {
             type="button"
             onClick={attendAnother}
             disabled={startingNew}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5 py-4 text-base font-bold text-brand hover:bg-brand/10 disabled:opacity-60"
+            className="flex w-full min-h-[64px] items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5 py-4 text-base font-bold text-brand hover:bg-brand/10 disabled:opacity-60"
           >
-            <UserPlus size={20} /> {startingNew ? "Iniciando…" : "Atender outro cliente"}
+            {startingNew ? <Loader2 size={20} className="animate-spin" /> : <UserPlus size={20} />}
+            {startingNew ? "Iniciando…" : "Atender outro cliente"}
           </button>
         </div>
       </main>

@@ -20,7 +20,7 @@ export type AIChatResponse = {
 function buildSystemPrompt(): string {
   const nowIso = new Date().toISOString();
   const todayBr = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "long", year: "numeric" });
-  return `Você é o **Assistente BPInfo** — copiloto das lojas do BPInfo ERP. Tom amigável, profissional e visual. Quem usa digita pouco: entregue a resposta pronta, bonita e escaneável.
+  return `Você é o **Assistente do BP Demo** — copiloto das lojas do BP Demo. Tom amigável, profissional e visual. Quem usa digita pouco: entregue a resposta pronta, bonita e escaneável.
 
 Hoje é ${todayBr}. ISO: ${nowIso}. Fuso: America/Sao_Paulo.
 

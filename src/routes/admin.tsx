@@ -69,7 +69,7 @@ function AdminPage() {
       <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
         <Link to="/" className="rounded-lg p-2 hover:bg-white/10" aria-label="Voltar"><ArrowLeft size={22} /></Link>
         <div className="flex items-center rounded-lg bg-white px-2.5 py-1">
-          <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="h-6 w-auto" />
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="h-6 w-auto" />
         </div>
         <h1 className="text-xl font-bold">Administração</h1>
         <button
@@ -192,7 +192,7 @@ function AdminLogin({ onOk }: { onOk: () => void }) {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
         <div className="mb-6 text-center">
-          <img src="/bpinfo-logo.jpg" alt="BPInfo ERP" className="mx-auto mb-3 h-14 w-auto" />
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
           <p className="text-sm text-muted-foreground">Administração — acesso restrito</p>
         </div>
         <label className="mb-1 block text-sm font-semibold">Usuário</label>
@@ -1138,7 +1138,7 @@ function ExportTab() {
   };
   const exportPdf = () => {
     const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(16); doc.text("BPInfo ERP — Atendimentos", 14, 15);
+    doc.setFontSize(16); doc.text("BP Demo — Atendimentos", 14, 15);
     doc.setFontSize(10); doc.text(`Período: ${label} — ${start.toLocaleDateString("pt-BR")} a ${end.toLocaleDateString("pt-BR")}`, 14, 22);
     autoTable(doc, {
       startY: 28,

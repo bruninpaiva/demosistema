@@ -67,7 +67,7 @@ export function AIChatDrawer() {
           </span>
           <div className="flex flex-col text-left">
             <span className="text-sm font-semibold">Assistente IA</span>
-            <span className="text-[10px] text-muted-foreground">BPInfo · Copiloto</span>
+            <span className="text-[10px] text-muted-foreground">BP Demo · Copiloto</span>
           </div>
         </div>
         <div className="flex items-center gap-1">

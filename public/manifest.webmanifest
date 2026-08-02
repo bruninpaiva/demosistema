@@ -1,7 +1,7 @@
 {
-  "name": "BPInfo ERP",
-  "short_name": "BPInfo",
-  "description": "Controle de atendimentos e vendas do BPInfo ERP.",
+  "name": "BP Demo",
+  "short_name": "BP Demo",
+  "description": "Controle de atendimentos e vendas do BP Demo.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
