@@ -39,6 +39,8 @@ import {
   AlertCircle,
   AlertTriangle,
   Info,
+  MoreVertical,
+  HandMetal,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
 import CommissionTab from "@/components/CommissionTab";
@@ -1860,11 +1862,113 @@ function randomPin() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+type StoreLiveOverview = { emAtendimento: number; activeReps: number };
+
+// Mesma fonte e cadência do "Ao vivo" do Dashboard (useLiveStatus), mas
+// buscando todas as lojas de uma vez em vez de uma por vez, para alimentar
+// a grade de StoreCard.
+function useStoreCardsData(stores: Store[]) {
+  const [reps, setReps] = useState<RepOption[]>([]);
+  const [overview, setOverview] = useState<Record<string, StoreLiveOverview>>({});
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const [{ data: repRows }, { data: openAtt }] = await Promise.all([
+        supabase.from("sales_reps").select("id,name,store_id,active"),
+        supabase.from("attendances").select("store_id").eq("status", "open"),
+      ]);
+      if (!alive) return;
+      const repList = (repRows as RepOption[]) ?? [];
+      setReps(repList);
+      const map: Record<string, StoreLiveOverview> = {};
+      for (const s of stores) map[s.id] = { emAtendimento: 0, activeReps: 0 };
+      for (const r of repList) {
+        if (r.active && r.store_id && map[r.store_id]) map[r.store_id].activeReps++;
+      }
+      for (const a of (openAtt ?? []) as { store_id: string | null }[]) {
+        if (a.store_id && map[a.store_id]) map[a.store_id].emAtendimento++;
+      }
+      setOverview(map);
+    };
+    load();
+    const interval = setInterval(load, LIVE_POLL_MS);
+    return () => { alive = false; clearInterval(interval); };
+  }, [stores]);
+
+  const alerts = useAlerts(stores, reps);
+  return { overview, alerts };
+}
+
+function StoreCard({
+  store,
+  overview,
+  alertCount,
+  onOpen,
+  actions,
+}: {
+  store: Store;
+  overview?: StoreLiveOverview;
+  alertCount: number;
+  onOpen: () => void;
+  actions: React.ReactNode;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      className={`group relative flex cursor-pointer flex-col gap-3 rounded-2xl border p-5 text-left shadow-sm transition hover:border-brand hover:shadow-md ${
+        store.active ? "border-border bg-card" : "border-border bg-muted/40"
+      }`}
+    >
+      <div className="absolute right-3 top-3" onClick={(e) => e.stopPropagation()}>
+        {actions}
+      </div>
+
+      <div className="flex items-start gap-3 pr-8">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+          <StoreIcon size={22} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-bold">{store.name}</p>
+          {store.active ? (
+            alertCount > 0 && (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+                <AlertTriangle size={12} /> {alertCount} alerta{alertCount > 1 ? "s" : ""}
+              </span>
+            )
+          ) : (
+            <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Inativa</span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <HandMetal size={14} className="text-brand" />
+          <strong className="text-foreground">{overview?.emAtendimento ?? 0}</strong> em atendimento
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Users size={14} />
+          <strong className="text-foreground">{overview?.activeReps ?? 0}</strong> vendedoras ativas
+        </span>
+      </div>
+
+      <span className="flex items-center gap-1 text-xs font-semibold text-brand opacity-0 transition group-hover:opacity-100">
+        Abrir gestão da loja <ChevronRight size={14} />
+      </span>
+    </div>
+  );
+}
+
 function StoresTab() {
   const { stores, reload } = useStores();
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
-  
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const { overview, alerts } = useStoreCardsData(stores);
 
   const add = async () => {
     if (!name.trim()) return toast.error("Informe o nome");
@@ -1916,6 +2020,26 @@ function StoresTab() {
     toast.success("Loja excluída"); reload();
   };
 
+  const selectedStore = stores.find((s) => s.id === selectedStoreId) ?? null;
+
+  if (selectedStore) {
+    return (
+      <div>
+        <button
+          onClick={() => setSelectedStoreId(null)}
+          className="mb-4 flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft size={16} /> Voltar para Lojas
+        </button>
+        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-muted-foreground">
+          <StoreIcon className="mx-auto mb-3" size={32} />
+          <p className="text-lg font-semibold text-foreground">{selectedStore.name}</p>
+          <p className="mt-1">Centro de Gestão em construção — chega nos próximos commits.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-6 rounded-2xl bg-card p-4 shadow-sm">
@@ -1942,44 +2066,48 @@ function StoresTab() {
         <p className="mt-2 text-xs text-muted-foreground">Deixe o PIN em branco para gerar um aleatório de 4 dígitos.</p>
       </div>
 
-      <ul className="space-y-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {stores.map((s) => (
-          <li key={s.id} className="rounded-xl bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                  <StoreIcon size={20} />
-                </div>
-                <div>
-                  <p className="text-lg font-bold">{s.name}</p>
-                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                    PIN oculto por segurança
-                    {!s.active && <span className="rounded-full bg-muted px-2 py-0.5 text-xs">Inativa</span>}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => renamePrompt(s)} className="rounded-lg border border-border px-3 py-2 text-sm">
-                  Renomear
-                </button>
-                <button onClick={() => changePin(s)} className="rounded-lg border border-border px-3 py-2 text-sm">
-                  Editar PIN
-                </button>
-                <button onClick={() => regenPin(s)} className="flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm">
-                  <RefreshCw size={14} /> Gerar PIN
-                </button>
-                <button onClick={() => toggle(s)} className="rounded-lg border border-border px-3 py-2 text-sm">
-                  {s.active ? "Desativar" : "Ativar"}
-                </button>
-                <button onClick={() => remove(s)} className="rounded-lg bg-destructive/10 p-2 text-destructive" aria-label="Excluir">
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </div>
-          </li>
+          <StoreCard
+            key={s.id}
+            store={s}
+            overview={overview[s.id]}
+            alertCount={alerts.filter((a) => a.storeId === s.id).length}
+            onOpen={() => setSelectedStoreId(s.id)}
+            actions={
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label={`Ações de ${s.name}`}
+                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <MoreVertical size={18} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => renamePrompt(s)} className="gap-2">
+                    <Pencil size={14} /> Renomear
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => changePin(s)} className="gap-2">
+                    <KeyRound size={14} /> Editar PIN
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => regenPin(s)} className="gap-2">
+                    <RefreshCw size={14} /> Gerar PIN aleatório
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => toggle(s)} className="gap-2">
+                    {s.active ? "Desativar loja" : "Ativar loja"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => remove(s)} className="gap-2 text-destructive focus:text-destructive">
+                    <Trash2 size={14} /> Excluir
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+          />
         ))}
-        {stores.length === 0 && <p className="text-muted-foreground">Nenhuma loja cadastrada.</p>}
-      </ul>
+      </div>
+      {stores.length === 0 && <p className="text-muted-foreground">Nenhuma loja cadastrada.</p>}
     </div>
   );
 }
