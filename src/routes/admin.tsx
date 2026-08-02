@@ -1304,25 +1304,8 @@ function Dashboard() {
         />
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl bg-card p-5 shadow-sm">
-          <h3 className="mb-4 text-lg font-bold">Motivos de não venda</h3>
-          {reasonChart.length === 0 ? (
-            <p className="text-muted-foreground">Sem dados.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={reasonChart} layout="vertical" margin={{ left: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={false} />
-                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="qtd" fill="var(--color-destructive)" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-
-        <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <section className="rounded-2xl bg-card p-5 shadow-sm lg:col-span-2">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-bold">Tendência</h3>
             <div className="flex gap-1 rounded-lg bg-muted p-1">
@@ -1352,6 +1335,31 @@ function Dashboard() {
               <Line type="monotone" dataKey={trendMetric} stroke="var(--color-brand)" strokeWidth={3} dot />
             </LineChart>
           </ResponsiveContainer>
+        </section>
+
+        <section className="rounded-2xl bg-card p-5 shadow-sm">
+          <h3 className="mb-4 text-lg font-bold">Top motivos de não venda</h3>
+          {reasonChart.length === 0 ? (
+            <p className="text-muted-foreground">Sem dados.</p>
+          ) : (
+            <ul className="space-y-3">
+              {reasonChart.slice(0, 3).map((r) => {
+                const max = reasonChart[0].qtd;
+                const pct = max > 0 ? (r.qtd / max) * 100 : 0;
+                return (
+                  <li key={r.name}>
+                    <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                      <span className="font-medium">{r.name}</span>
+                      <span className="shrink-0 font-semibold text-muted-foreground">{r.qtd}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-2 rounded-full bg-destructive" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       </div>
 
