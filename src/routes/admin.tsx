@@ -1863,6 +1863,7 @@ function randomPin() {
 }
 
 type StoreLiveOverview = { emAtendimento: number; activeReps: number };
+type StoreQueueRep = { id: string; name: string; queue_position: number | null; status: string };
 
 // Mesma fonte e cadência do "Ao vivo" do Dashboard (useLiveStatus), mas
 // buscando todas as lojas de uma vez em vez de uma por vez, para alimentar
@@ -1963,6 +1964,85 @@ function StoreCard({
   );
 }
 
+function useStoreQueue(storeId: string) {
+  const [reps, setReps] = useState<StoreQueueRep[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("sales_reps")
+        .select("id,name,queue_position,status")
+        .eq("active", true)
+        .eq("store_id", storeId)
+        .order("queue_position", { ascending: true });
+      if (!alive) return;
+      setReps((data ?? []) as StoreQueueRep[]);
+      setLoading(false);
+    };
+    load();
+    const interval = setInterval(load, LIVE_POLL_MS);
+    return () => { alive = false; clearInterval(interval); };
+  }, [storeId]);
+
+  return { reps, loading };
+}
+
+const REP_STATUS_LABELS: Record<string, string> = {
+  available: "Na fila",
+  in_service: "Em atendimento",
+  lunch: "Almoço",
+  off: "Fora",
+};
+
+function RepStatusChip({ status }: { status: string }) {
+  const tone =
+    status === "in_service"
+      ? "bg-brand/10 text-brand"
+      : status === "available"
+        ? "bg-emerald-100 text-emerald-800"
+        : status === "lunch"
+          ? "bg-amber-100 text-amber-800"
+          : "bg-muted text-muted-foreground";
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${tone}`}>{REP_STATUS_LABELS[status] ?? status}</span>;
+}
+
+function StoreOperationalStatus({ storeId }: { storeId: string }) {
+  const { reps, loading } = useStoreQueue(storeId);
+
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <h4 className="mb-4 text-base font-bold text-foreground">Status em tempo real</h4>
+      <LiveStrip storeId={storeId} />
+
+      <div className="rounded-xl border border-border">
+        <div className="border-b border-border px-4 py-3 text-sm font-bold text-muted-foreground">Fila atual</div>
+        {loading ? (
+          <p className="px-4 py-5 text-sm text-muted-foreground">Carregando fila...</p>
+        ) : reps.length === 0 ? (
+          <p className="px-4 py-5 text-sm text-muted-foreground">Nenhuma vendedora ativa nesta loja.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {reps.map((rep) => (
+              <li key={rep.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                    {rep.queue_position ?? "-"}
+                  </span>
+                  <span className="truncate font-semibold text-foreground">{rep.name}</span>
+                </div>
+                <RepStatusChip status={rep.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function EmptyStoreSection({ title, description }: { title: string; description: string }) {
   return (
     <section className="rounded-2xl border border-dashed border-border bg-card p-6">
@@ -2004,10 +2084,7 @@ function StoreManagementCenter({ store, onBack }: { store: Store; onBack: () => 
       </header>
 
       <EmptyStoreSection title="Alertas" description="Em breve, mostra os alertas operacionais específicos desta loja." />
-      <EmptyStoreSection
-        title="Status em tempo real"
-        description="Em breve, acompanha fila, atendimentos em andamento e pausas da equipe."
-      />
+      <StoreOperationalStatus storeId={store.id} />
       <EmptyStoreSection
         title="Indicadores"
         description="Em breve, resume atendimentos, conversão e métricas do período selecionado."
