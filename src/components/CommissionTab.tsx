@@ -289,7 +289,7 @@ export default function CommissionTab() {
     if (!actor) return;
     (async () => {
       const { data } = await supabase.rpc("verify_admin_user" as never, {
-        _username: actor.user, _password: actor.pass,
+        _email: actor.user, _password: actor.pass,
       } as never);
       const arr = (data as unknown as { role: "admin" | "gerente"; store_id: string | null }[]) || [];
       if (arr[0]) {

@@ -19,6 +19,13 @@ import {
   Calculator,
   Wrench,
   Barcode,
+  Loader2,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
 import CommissionTab from "@/components/CommissionTab";
@@ -45,6 +52,13 @@ type Tab = "dashboard" | "por-vendedora" | "pausas" | "lojas" | "vendedoras" | "
 const AUTH_KEY = "lupo_admin_ok";
 const ACTOR_USER_KEY = "lupo_admin_user";
 const ACTOR_PASS_KEY = "lupo_admin_pass";
+const MUST_CHANGE_KEY = "lupo_admin_must_change";
+
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: "Super Administrador",
+  admin: "Administrador",
+  gerente: "Gerente",
+};
 
 export function getAdminActor(): { user: string; pass: string } | null {
   if (typeof window === "undefined") return null;
@@ -61,8 +75,42 @@ function AdminPage() {
   const [authed, setAuthed] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(AUTH_KEY) === "1"
   );
+  const [adminExists, setAdminExists] = useState<boolean | null>(null);
+  const [mustChange, setMustChange] = useState<boolean>(() =>
+    typeof window !== "undefined" && sessionStorage.getItem(MUST_CHANGE_KEY) === "1"
+  );
 
-  if (!authed) return <AdminLogin onOk={() => setAuthed(true)} />;
+  useEffect(() => {
+    if (authed) return;
+    supabase.rpc("admin_exists").then(({ data, error }) => {
+      setAdminExists(error ? true : Boolean(data));
+    });
+  }, [authed]);
+
+  if (!authed) {
+    if (adminExists === null) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        </div>
+      );
+    }
+    if (!adminExists) {
+      return <AdminBootstrap onOk={() => { setAdminExists(true); setAuthed(true); }} />;
+    }
+    return (
+      <AdminLogin
+        onOk={(requiresPasswordChange) => {
+          setMustChange(requiresPasswordChange);
+          setAuthed(true);
+        }}
+      />
+    );
+  }
+
+  if (mustChange) {
+    return <ForceChangePassword onDone={() => { sessionStorage.removeItem(MUST_CHANGE_KEY); setMustChange(false); }} />;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -77,6 +125,7 @@ function AdminPage() {
             sessionStorage.removeItem(AUTH_KEY);
             sessionStorage.removeItem(ACTOR_USER_KEY);
             sessionStorage.removeItem(ACTOR_PASS_KEY);
+            sessionStorage.removeItem(MUST_CHANGE_KEY);
             window.dispatchEvent(new Event("lupo-admin-auth-changed"));
             setAuthed(false);
           }}
@@ -162,8 +211,8 @@ function AdminPage() {
   );
 }
 
-function AdminLogin({ onOk }: { onOk: () => void }) {
-  const [user, setUser] = useState("");
+function AdminLogin({ onOk }: { onOk: (requiresPasswordChange: boolean) => void }) {
+  const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -172,17 +221,21 @@ function AdminLogin({ onOk }: { onOk: () => void }) {
     e.preventDefault();
     setBusy(true);
     setError(false);
-    const { data, error: err } = await supabase.rpc("verify_admin", {
-      _username: user.trim(),
+    const trimmedEmail = email.trim();
+    const { data, error: err } = await supabase.rpc("verify_admin_user", {
+      _email: trimmedEmail,
       _password: pass,
     });
     setBusy(false);
-    if (!err && data === true) {
+    const row = (data as { must_change_password: boolean }[] | null)?.[0];
+    if (!err && row) {
       sessionStorage.setItem(AUTH_KEY, "1");
-      sessionStorage.setItem(ACTOR_USER_KEY, user.trim());
+      sessionStorage.setItem(ACTOR_USER_KEY, trimmedEmail);
       sessionStorage.setItem(ACTOR_PASS_KEY, pass);
+      if (row.must_change_password) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
       window.dispatchEvent(new Event("lupo-admin-auth-changed"));
-      onOk();
+      supabase.rpc("admin_record_login", { _email: trimmedEmail, _password: pass });
+      onOk(row.must_change_password);
     } else {
       setError(true);
     }
@@ -195,11 +248,12 @@ function AdminLogin({ onOk }: { onOk: () => void }) {
           <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
           <p className="text-sm text-muted-foreground">Administração — acesso restrito</p>
         </div>
-        <label className="mb-1 block text-sm font-semibold">Usuário</label>
+        <label className="mb-1 block text-sm font-semibold">E-mail</label>
         <input
           autoFocus
-          value={user}
-          onChange={(e) => { setUser(e.target.value); setError(false); }}
+          type="email"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setError(false); }}
           className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
         />
         <label className="mb-1 block text-sm font-semibold">Senha</label>
@@ -209,13 +263,193 @@ function AdminLogin({ onOk }: { onOk: () => void }) {
           onChange={(e) => { setPass(e.target.value); setError(false); }}
           className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
         />
-        {error && <p className="mb-3 text-sm font-semibold text-destructive">Usuário ou senha incorretos.</p>}
+        {error && <p className="mb-3 text-sm font-semibold text-destructive">E-mail ou senha incorretos.</p>}
         <button type="submit" disabled={busy} className="w-full rounded-xl bg-brand px-6 py-3 text-lg font-bold text-brand-foreground disabled:opacity-60">
           {busy ? "Entrando..." : "Entrar"}
         </button>
-        <Link to="/" className="mt-4 block text-center text-sm text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          disabled
+          title="Em breve"
+          className="mt-3 block w-full text-center text-sm text-muted-foreground/60 cursor-not-allowed"
+        >
+          Esqueci minha senha <span className="text-xs">(Em breve)</span>
+        </button>
+        <Link to="/" className="mt-2 block text-center text-sm text-muted-foreground hover:text-foreground">
           Voltar
         </Link>
+      </form>
+    </div>
+  );
+}
+
+function AdminBootstrap({ onOk }: { onOk: () => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!name.trim()) { setError("Informe seu nome."); return; }
+    if (!email.trim()) { setError("Informe um e-mail."); return; }
+    if (pass.length < 4) { setError("A senha precisa ter ao menos 4 caracteres."); return; }
+    if (pass !== confirmPass) { setError("As senhas não coincidem."); return; }
+
+    setBusy(true);
+    const { error: err } = await supabase.rpc("admin_bootstrap", {
+      _name: name.trim(),
+      _email: email.trim(),
+      _password: pass,
+    });
+    setBusy(false);
+
+    if (err) {
+      setError("Não foi possível criar o administrador. Tente novamente.");
+      return;
+    }
+
+    sessionStorage.setItem(AUTH_KEY, "1");
+    sessionStorage.setItem(ACTOR_USER_KEY, email.trim());
+    sessionStorage.setItem(ACTOR_PASS_KEY, pass);
+    window.dispatchEvent(new Event("lupo-admin-auth-changed"));
+    onOk();
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
+        <div className="mb-6 text-center">
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
+          <h1 className="text-xl font-extrabold">Bem-vindo ao BPInfo ERP</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Vamos criar o primeiro administrador do sistema.
+          </p>
+        </div>
+
+        <label className="mb-1 block text-sm font-semibold">Nome</label>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => { setName(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+        />
+
+        <label className="mb-1 block text-sm font-semibold">E-mail</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+        />
+
+        <label className="mb-1 block text-sm font-semibold">Senha</label>
+        <input
+          type="password"
+          value={pass}
+          onChange={(e) => { setPass(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+        />
+
+        <label className="mb-1 block text-sm font-semibold">Confirmar senha</label>
+        <input
+          type="password"
+          value={confirmPass}
+          onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+        />
+
+        {error && <p className="mb-3 text-sm font-semibold text-destructive">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3 text-lg font-bold text-brand-foreground disabled:opacity-60"
+        >
+          {busy && <Loader2 size={20} className="animate-spin" />}
+          {busy ? "Criando..." : "Criar administrador"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ForceChangePassword({ onDone }: { onDone: () => void }) {
+  const [pass, setPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const actor = getAdminActor();
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (pass.length < 4) { setError("A senha precisa ter ao menos 4 caracteres."); return; }
+    if (pass !== confirmPass) { setError("As senhas não coincidem."); return; }
+    if (!actor) return;
+
+    setBusy(true);
+    const { error: err } = await supabase.rpc("admin_change_own_password", {
+      _email: actor.user,
+      _current_password: actor.pass,
+      _new_password: pass,
+    });
+    setBusy(false);
+
+    if (err) {
+      setError("Não foi possível trocar a senha. Tente novamente.");
+      return;
+    }
+
+    // A senha guardada na sessão precisa acompanhar a troca — as próximas
+    // chamadas do painel reautenticam com ela a cada ação.
+    sessionStorage.setItem(ACTOR_PASS_KEY, pass);
+    onDone();
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg border-t-4 border-brand">
+        <div className="mb-6 text-center">
+          <img src="/bpinfo-logo.jpg" alt="BP Demo" className="mx-auto mb-3 h-14 w-auto" />
+          <h1 className="text-xl font-extrabold">Defina sua nova senha</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Por segurança, você precisa trocar sua senha temporária antes de continuar.
+          </p>
+        </div>
+
+        <label className="mb-1 block text-sm font-semibold">Nova senha</label>
+        <input
+          autoFocus
+          type="password"
+          value={pass}
+          onChange={(e) => { setPass(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+        />
+
+        <label className="mb-1 block text-sm font-semibold">Confirmar nova senha</label>
+        <input
+          type="password"
+          value={confirmPass}
+          onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
+          className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-lg"
+        />
+
+        {error && <p className="mb-3 text-sm font-semibold text-destructive">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3 text-lg font-bold text-brand-foreground disabled:opacity-60"
+        >
+          {busy && <Loader2 size={20} className="animate-spin" />}
+          {busy ? "Salvando..." : "Salvar nova senha"}
+        </button>
       </form>
     </div>
   );
@@ -1388,17 +1622,123 @@ function BreaksTab() {
 
 // ------------ Users (admin credentials) ------------
 
-type AdminUser = { id: string; username: string; created_at: string; updated_at: string };
+type AdminRole = "admin" | "gerente" | "super_admin";
+
+type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: AdminRole;
+  active: boolean;
+  must_change_password: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type SortKey = "name" | "email" | "role" | "active" | "last_login_at" | "created_at";
+
+const AVATAR_PALETTE = [
+  "bg-brand/15 text-brand",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-800",
+  "bg-sky-100 text-sky-700",
+  "bg-violet-100 text-violet-700",
+  "bg-rose-100 text-rose-700",
+];
+
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function paletteFor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function friendlyAdminError(message?: string): string {
+  const m = message ?? "";
+  if (m.includes("email already registered")) return "Esse e-mail já está cadastrado.";
+  if (m.includes("must keep at least one active super admin"))
+    return "Não é possível desativar o último Super Administrador ativo.";
+  if (m.includes("cannot deactivate yourself"))
+    return "Você não pode se desativar — isso deixaria o sistema sem nenhum administrador.";
+  if (m.includes("name required")) return "Informe o nome.";
+  if (m.includes("email required")) return "Informe o e-mail.";
+  if (m.includes("password too short")) return "A senha precisa ter ao menos 4 caracteres.";
+  if (m.includes("unauthorized")) return "Sua sessão expirou. Faça login novamente.";
+  if (m.includes("not found")) return "Usuário não encontrado.";
+  return "Algo deu errado. Tente novamente.";
+}
+
+function AvatarBadge({ name }: { name: string }) {
+  return (
+    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${paletteFor(name || "?")}`}>
+      {initialsFor(name || "?")}
+    </span>
+  );
+}
+
+function StatusBadge({ active }: { active: boolean }) {
+  return active ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success">
+      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ativo
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> Inativo
+    </span>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  current,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  current: { key: SortKey; dir: "asc" | "desc" };
+  onSort: (key: SortKey) => void;
+}) {
+  const active = current.key === sortKey;
+  const Icon = active ? (current.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th className="px-4 py-3">
+      <button
+        onClick={() => onSort(sortKey)}
+        className={`flex items-center gap-1 font-semibold ${active ? "text-foreground" : "text-muted-foreground"}`}
+      >
+        {label} <Icon size={13} />
+      </button>
+    </th>
+  );
+}
 
 function UsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
+
   const [showNew, setShowNew] = useState(false);
-  const [newUser, setNewUser] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [newPass, setNewPass] = useState("");
+  const [newRole, setNewRole] = useState<AdminRole>("admin");
+  const [newRequireChange, setNewRequireChange] = useState(true);
+
   const [editing, setEditing] = useState<AdminUser | null>(null);
-  const [editUser, setEditUser] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
   const [editPass, setEditPass] = useState("");
+  const [editRole, setEditRole] = useState<AdminRole>("admin");
+  const [editRequireChange, setEditRequireChange] = useState(true);
 
   const actor = getAdminActor();
   const requestIdRef = useRef(0);
@@ -1416,7 +1756,7 @@ function UsersTab() {
       // recente a load() já foi disparada (ex.: efeito duplicado, troca rápida de aba).
       if (requestId !== requestIdRef.current) return;
       if (error) {
-        toast.error("Erro ao carregar usuários");
+        toast.error(friendlyAdminError(error.message));
         return;
       }
       setUsers((data ?? []) as AdminUser[]);
@@ -1431,58 +1771,86 @@ function UsersTab() {
 
   const create = async () => {
     if (!actor) return;
-    if (!newUser.trim() || newPass.length < 4) {
-      toast.error("Usuário e senha (mínimo 4 caracteres) obrigatórios");
+    if (!newName.trim() || !newEmail.trim() || newPass.length < 4) {
+      toast.error("Nome, e-mail e senha (mínimo 4 caracteres) obrigatórios");
       return;
     }
     const { error } = await supabase.rpc("admin_create", {
       _actor: actor.user,
       _actor_password: actor.pass,
-      _username: newUser.trim(),
+      _name: newName.trim(),
+      _email: newEmail.trim(),
       _password: newPass,
+      _role: newRole,
+      _require_password_change: newRequireChange,
     });
-    if (error) { toast.error("Erro ao criar usuário"); return; }
+    if (error) { toast.error(friendlyAdminError(error.message)); return; }
     toast.success("Usuário criado");
-    setNewUser(""); setNewPass(""); setShowNew(false);
+    setNewName(""); setNewEmail(""); setNewPass(""); setNewRole("admin"); setNewRequireChange(true); setShowNew(false);
     load();
   };
 
   const save = async () => {
     if (!actor || !editing) return;
-    const newName = editUser.trim();
+    const newNameValue = editName.trim();
+    const newEmailValue = editEmail.trim();
     const newPwd = editPass;
-    if (!newName && !newPwd) { setEditing(null); return; }
+    if (!newNameValue && !newEmailValue && !newPwd && editRole === editing.role) { setEditing(null); return; }
     if (newPwd && newPwd.length < 4) { toast.error("Senha muito curta"); return; }
     const { error } = await supabase.rpc("admin_update", {
       _actor: actor.user,
       _actor_password: actor.pass,
       _id: editing.id,
-      _new_username: newName || (null as unknown as string),
+      _new_name: newNameValue || (null as unknown as string),
+      _new_email: newEmailValue || (null as unknown as string),
       _new_password: newPwd || (null as unknown as string),
+      _new_role: editRole !== editing.role ? editRole : (null as unknown as AdminRole),
+      _require_password_change: editRequireChange,
     });
-    if (error) { toast.error("Erro ao salvar"); return; }
+    if (error) { toast.error(friendlyAdminError(error.message)); return; }
     toast.success("Usuário atualizado");
-    setEditing(null); setEditUser(""); setEditPass("");
+    setEditing(null); setEditName(""); setEditEmail(""); setEditPass("");
     load();
   };
 
-  const remove = async (u: AdminUser) => {
+  const toggleActive = async (u: AdminUser) => {
     if (!actor) return;
-    if (u.username === actor.user) { toast.error("Você não pode excluir seu próprio usuário"); return; }
-    if (!confirm(`Excluir o usuário "${u.username}"?`)) return;
-    const { error } = await supabase.rpc("admin_delete", {
+    const nextActive = !u.active;
+    const label = nextActive ? "reativar" : "desativar";
+    if (!confirm(`Deseja ${label} o usuário "${u.name}"?`)) return;
+    const { error } = await supabase.rpc("admin_set_active", {
       _actor: actor.user,
       _actor_password: actor.pass,
       _id: u.id,
+      _active: nextActive,
     });
-    if (error) { toast.error("Erro ao excluir"); return; }
-    toast.success("Usuário excluído");
+    if (error) { toast.error(friendlyAdminError(error.message)); return; }
+    toast.success(nextActive ? "Usuário reativado" : "Usuário desativado");
     load();
   };
 
+  const onSort = (key: SortKey) => {
+    setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  };
+
+  const filteredSorted = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+      : users;
+    const sorted = [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (sort.key === "active") cmp = Number(a.active) - Number(b.active);
+      else if (sort.key === "last_login_at") cmp = (a.last_login_at ?? "").localeCompare(b.last_login_at ?? "");
+      else cmp = String(a[sort.key]).localeCompare(String(b[sort.key]));
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [users, query, sort]);
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold">Usuários administradores</h2>
           <p className="text-sm text-muted-foreground">Quem pode acessar o painel de administração.</p>
@@ -1500,47 +1868,104 @@ function UsersTab() {
           <h3 className="mb-3 font-semibold">Criar novo usuário</h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-semibold">Usuário</label>
-              <input value={newUser} onChange={(e) => setNewUser(e.target.value)}
+              <label className="mb-1 block text-sm font-semibold">Nome</label>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)}
                 className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-semibold">Senha</label>
+              <label className="mb-1 block text-sm font-semibold">E-mail</label>
+              <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Cargo</label>
+              <select value={newRole} onChange={(e) => setNewRole(e.target.value as AdminRole)}
+                className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5">
+                <option value="admin">Administrador</option>
+                <option value="gerente">Gerente</option>
+                <option value="super_admin">Super Administrador</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Senha temporária</label>
               <input type="text" value={newPass} onChange={(e) => setNewPass(e.target.value)}
                 placeholder="mínimo 4 caracteres"
                 className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
             </div>
           </div>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={newRequireChange} onChange={(e) => setNewRequireChange(e.target.checked)} />
+            Exigir troca de senha no próximo login
+          </label>
           <div className="mt-3 flex gap-2">
             <button onClick={create} className="rounded-xl bg-brand px-4 py-2 font-semibold text-brand-foreground">Salvar</button>
-            <button onClick={() => { setShowNew(false); setNewUser(""); setNewPass(""); }}
-              className="rounded-xl border border-border px-4 py-2 font-semibold">Cancelar</button>
+            <button
+              onClick={() => {
+                setShowNew(false);
+                setNewName(""); setNewEmail(""); setNewPass(""); setNewRole("admin"); setNewRequireChange(true);
+              }}
+              className="rounded-xl border border-border px-4 py-2 font-semibold"
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar por nome ou e-mail"
+          className="w-full rounded-xl border-2 border-border bg-background py-2.5 pl-9 pr-3"
+        />
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
         {loading ? (
           <div className="p-6 text-center text-muted-foreground">Carregando...</div>
-        ) : users.length === 0 ? (
-          <div className="p-6 text-center text-muted-foreground">Nenhum usuário cadastrado.</div>
+        ) : filteredSorted.length === 0 ? (
+          <div className="p-6 text-center text-muted-foreground">
+            {query ? "Nenhum usuário encontrado para essa busca." : "Nenhum usuário cadastrado."}
+          </div>
         ) : (
           <table className="w-full text-left">
             <thead className="bg-muted/50 text-sm">
               <tr>
-                <th className="px-4 py-3">Usuário</th>
-                <th className="px-4 py-3">Criado</th>
-                <th className="px-4 py-3 text-right">Ações</th>
+                <SortHeader label="Nome" sortKey="name" current={sort} onSort={onSort} />
+                <SortHeader label="E-mail" sortKey="email" current={sort} onSort={onSort} />
+                <SortHeader label="Cargo" sortKey="role" current={sort} onSort={onSort} />
+                <SortHeader label="Status" sortKey="active" current={sort} onSort={onSort} />
+                <SortHeader label="Último acesso" sortKey="last_login_at" current={sort} onSort={onSort} />
+                <SortHeader label="Criado" sortKey="created_at" current={sort} onSort={onSort} />
+                <th className="px-4 py-3 text-right font-semibold">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-semibold">
-                    {u.username}
-                    {actor && u.username === actor.user && (
-                      <span className="ml-2 rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">você</span>
-                    )}
+              {filteredSorted.map((u) => (
+                <tr key={u.id} className={`border-t border-border ${u.active ? "" : "opacity-60"}`}>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <AvatarBadge name={u.name} />
+                      <div>
+                        <div className="flex items-center gap-2 font-semibold">
+                          {u.name}
+                          {actor && u.email === actor.user && (
+                            <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">você</span>
+                          )}
+                        </div>
+                        {u.must_change_password && (
+                          <span className="text-xs text-amber-700">Aguardando troca de senha</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">{u.email}</td>
+                  <td className="px-4 py-3 text-sm">{ROLE_LABELS[u.role] ?? u.role}</td>
+                  <td className="px-4 py-3"><StatusBadge active={u.active} /></td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString("pt-BR") : "Nunca"}
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">
                     {new Date(u.created_at).toLocaleDateString("pt-BR")}
@@ -1548,18 +1973,33 @@ function UsersTab() {
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => { setEditing(u); setEditUser(u.username); setEditPass(""); }}
+                        onClick={() => {
+                          setEditing(u);
+                          setEditName(u.name);
+                          setEditEmail(u.email);
+                          setEditPass("");
+                          setEditRole(u.role);
+                          setEditRequireChange(true);
+                        }}
                         className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-muted"
                       >
                         <Pencil size={14} /> Editar
                       </button>
-                      <button
-                        onClick={() => remove(u)}
-                        disabled={!!actor && u.username === actor.user}
-                        className="flex items-center gap-1 rounded-lg border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 size={14} /> Excluir
-                      </button>
+                      {u.active ? (
+                        <button
+                          onClick={() => toggleActive(u)}
+                          className="flex items-center gap-1 rounded-lg border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                        >
+                          <UserX size={14} /> Desativar
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => toggleActive(u)}
+                          className="flex items-center gap-1 rounded-lg border border-success/40 px-3 py-1.5 text-sm text-success hover:bg-success/10"
+                        >
+                          <UserCheck size={14} /> Reativar
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1572,14 +2012,30 @@ function UsersTab() {
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditing(null)}>
           <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-4 text-lg font-bold">Editar {editing.username}</h3>
-            <label className="mb-1 block text-sm font-semibold">Usuário</label>
-            <input value={editUser} onChange={(e) => setEditUser(e.target.value)}
+            <h3 className="mb-4 text-lg font-bold">Editar {editing.name}</h3>
+            <label className="mb-1 block text-sm font-semibold">Nome</label>
+            <input value={editName} onChange={(e) => setEditName(e.target.value)}
               className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
-            <label className="mb-1 block text-sm font-semibold">Nova senha</label>
+            <label className="mb-1 block text-sm font-semibold">E-mail</label>
+            <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+              className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
+            <label className="mb-1 block text-sm font-semibold">Cargo</label>
+            <select value={editRole} onChange={(e) => setEditRole(e.target.value as AdminRole)}
+              className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5">
+              <option value="admin">Administrador</option>
+              <option value="gerente">Gerente</option>
+              <option value="super_admin">Super Administrador</option>
+            </select>
+            <label className="mb-1 block text-sm font-semibold">Nova senha temporária</label>
             <input type="text" value={editPass} onChange={(e) => setEditPass(e.target.value)}
               placeholder="deixe em branco para manter a atual"
-              className="mb-4 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
+              className="mb-2 w-full rounded-xl border-2 border-border bg-background px-4 py-2.5" />
+            {editPass && (
+              <label className="mb-4 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={editRequireChange} onChange={(e) => setEditRequireChange(e.target.checked)} />
+                Exigir troca de senha no próximo login
+              </label>
+            )}
             <div className="flex justify-end gap-2">
               <button onClick={() => setEditing(null)}
                 className="rounded-xl border border-border px-4 py-2 font-semibold">Cancelar</button>

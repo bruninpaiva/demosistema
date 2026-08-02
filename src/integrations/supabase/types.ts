@@ -16,31 +16,43 @@ export type Database = {
     Tables: {
       admin_users: {
         Row: {
+          active: boolean
           created_at: string
+          email: string
           id: string
+          last_login_at: string | null
+          must_change_password: boolean
+          name: string
           password_hash: string
           role: Database["public"]["Enums"]["admin_role"]
           store_id: string | null
           updated_at: string
-          username: string
         }
         Insert: {
+          active?: boolean
           created_at?: string
+          email: string
           id?: string
+          last_login_at?: string | null
+          must_change_password?: boolean
+          name: string
           password_hash: string
           role?: Database["public"]["Enums"]["admin_role"]
           store_id?: string | null
           updated_at?: string
-          username: string
         }
         Update: {
+          active?: boolean
           created_at?: string
+          email?: string
           id?: string
+          last_login_at?: string | null
+          must_change_password?: boolean
+          name?: string
           password_hash?: string
           role?: Database["public"]["Enums"]["admin_role"]
           store_id?: string | null
           updated_at?: string
-          username?: string
         }
         Relationships: [
           {
@@ -445,14 +457,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_bootstrap: {
+        Args: { _email: string; _name: string; _password: string }
+        Returns: string
+      }
+      admin_change_own_password: {
+        Args: { _current_password: string; _email: string; _new_password: string }
+        Returns: undefined
+      }
       admin_create: {
         Args: {
           _actor: string
           _actor_password: string
+          _email: string
+          _name: string
           _password: string
+          _require_password_change?: boolean
           _role?: Database["public"]["Enums"]["admin_role"]
           _store_id?: string
-          _username: string
         }
         Returns: string
       }
@@ -460,26 +482,44 @@ export type Database = {
         Args: { _actor: string; _actor_password: string; _id: string }
         Returns: undefined
       }
+      admin_exists: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       admin_list: {
         Args: { _actor: string; _actor_password: string }
         Returns: {
+          active: boolean
           created_at: string
+          email: string
           id: string
+          last_login_at: string | null
+          must_change_password: boolean
+          name: string
           role: Database["public"]["Enums"]["admin_role"]
           store_id: string
           updated_at: string
-          username: string
         }[]
+      }
+      admin_record_login: {
+        Args: { _email: string; _password: string }
+        Returns: undefined
+      }
+      admin_set_active: {
+        Args: { _actor: string; _actor_password: string; _active: boolean; _id: string }
+        Returns: undefined
       }
       admin_update: {
         Args: {
           _actor: string
           _actor_password: string
           _id: string
+          _new_email: string
+          _new_name: string
           _new_password: string
           _new_role?: Database["public"]["Enums"]["admin_role"]
           _new_store_id?: string
-          _new_username: string
+          _require_password_change?: boolean
         }
         Returns: undefined
       }
@@ -540,16 +580,18 @@ export type Database = {
       }
       send_to_end_of_queue: { Args: { _rep_id: string }; Returns: undefined }
       verify_admin: {
-        Args: { _password: string; _username: string }
+        Args: { _email: string; _password: string }
         Returns: boolean
       }
       verify_admin_user: {
-        Args: { _password: string; _username: string }
+        Args: { _email: string; _password: string }
         Returns: {
+          email: string
           id: string
+          must_change_password: boolean
+          name: string
           role: Database["public"]["Enums"]["admin_role"]
           store_id: string
-          username: string
         }[]
       }
       verify_store_pin: {
@@ -558,7 +600,7 @@ export type Database = {
       }
     }
     Enums: {
-      admin_role: "admin" | "gerente"
+      admin_role: "admin" | "gerente" | "super_admin"
       app_role: "admin" | "operator"
     }
     CompositeTypes: {
@@ -687,7 +729,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      admin_role: ["admin", "gerente"],
+      admin_role: ["admin", "gerente", "super_admin"],
       app_role: ["admin", "operator"],
     },
   },
