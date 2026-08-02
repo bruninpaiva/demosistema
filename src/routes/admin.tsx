@@ -43,6 +43,8 @@ import {
   UserPlus,
   Link2,
   Unlink,
+  Bell,
+  Clock,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
 import CommissionTab from "@/components/CommissionTab";
@@ -101,11 +103,62 @@ const ALL_REPS = "__all__";
 // Centralizado aqui de propósito: hoje é um valor único para toda a rede;
 // quando cada loja tiver seu próprio horário cadastrado, é só trocar este
 // valor fixo por uma consulta a essa nova coluna, sem mexer nas regras.
-const OPERATING_HOURS = { start: 9, end: 20 };
+type StoreOperatingHour = {
+  id?: string;
+  store_id: string;
+  weekday: number;
+  is_open: boolean;
+  opens_at: string;
+  closes_at: string;
+};
 
-function isWithinOperatingHours(date: Date): boolean {
-  const h = date.getHours();
-  return h >= OPERATING_HOURS.start && h < OPERATING_HOURS.end;
+type StoreOperationalState = "open" | "closed" | "disabled";
+
+const WEEKDAYS = [
+  { weekday: 1, label: "Segunda" },
+  { weekday: 2, label: "Terca" },
+  { weekday: 3, label: "Quarta" },
+  { weekday: 4, label: "Quinta" },
+  { weekday: 5, label: "Sexta" },
+  { weekday: 6, label: "Sabado" },
+  { weekday: 0, label: "Domingo" },
+];
+
+function defaultOperatingHours(storeId: string): StoreOperatingHour[] {
+  return WEEKDAYS.map(({ weekday }) => ({
+    store_id: storeId,
+    weekday,
+    is_open: weekday !== 0,
+    opens_at: "09:00",
+    closes_at: "20:00",
+  }));
+}
+
+function normalizeTime(value: string): string {
+  return value.slice(0, 5);
+}
+
+function minutesFromTime(value: string): number {
+  const [h, m] = normalizeTime(value).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function getStoreHoursForDay(storeId: string, hours: StoreOperatingHour[], date: Date): StoreOperatingHour {
+  const weekday = date.getDay();
+  return hours.find((h) => h.store_id === storeId && h.weekday === weekday) ??
+    defaultOperatingHours(storeId).find((h) => h.weekday === weekday)!;
+}
+
+function getStoreOperationalState(store: Store, hours: StoreOperatingHour[], date = new Date()): StoreOperationalState {
+  if (!store.active) return "disabled";
+  const dayHours = getStoreHoursForDay(store.id, hours, date);
+  if (!dayHours.is_open) return "closed";
+  const nowMinutes = date.getHours() * 60 + date.getMinutes();
+  return nowMinutes >= minutesFromTime(dayHours.opens_at) && nowMinutes < minutesFromTime(dayHours.closes_at) ? "open" : "closed";
+}
+
+function operationalStateLabel(state: StoreOperationalState): string {
+  return state === "open" ? "Aberta" : state === "closed" ? "Fechada" : "Desativada";
 }
 
 function AdminPage() {
@@ -192,9 +245,13 @@ function AdminPage() {
         </div>
         <h1 className="text-xl font-bold">Administração</h1>
 
+        <div className="ml-auto">
+          <NotificationBell />
+        </div>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="ml-auto flex items-center gap-2 rounded-lg border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10">
+            <button className="flex items-center gap-2 rounded-lg border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10">
               <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${paletteFor(sessionStorage.getItem(ACTOR_NAME_KEY) || "?")}`}>
                 {initialsFor(sessionStorage.getItem(ACTOR_NAME_KEY) || "?")}
               </span>
@@ -880,6 +937,27 @@ function useStores() {
   return { stores, reload: load };
 }
 
+function useStoreOperatingHours(storeIds: string[]) {
+  const [hours, setHours] = useState<StoreOperatingHour[]>([]);
+  const key = storeIds.join(",");
+
+  const load = () => {
+    if (storeIds.length === 0) {
+      setHours([]);
+      return Promise.resolve();
+    }
+    return supabase
+      .from("store_operating_hours")
+      .select("id,store_id,weekday,is_open,opens_at,closes_at")
+      .in("store_id", storeIds)
+      .then(({ data }) => setHours((data ?? []) as StoreOperatingHour[]));
+  };
+
+  useEffect(() => { load(); }, [key]);
+
+  return { hours, reload: load };
+}
+
 function useAttendances(start: Date, end: Date, storeId: string) {
   const [data, setData] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -973,7 +1051,15 @@ function LiveStrip({ storeId }: { storeId: string }) {
 // por polling como o restante do "ao vivo".
 
 type AlertSeverity = "info" | "warning" | "critical";
-type DashboardAlert = { id: string; severity: AlertSeverity; message: string; storeId: string | null };
+type DashboardAlert = {
+  id: string;
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  storeId: string | null;
+  createdAt: string;
+  details?: string[];
+};
 type AlertRow = { id: string; created_at: string; store_id: string | null; sales_rep_id: string; type: "sale" | "no_sale" | null; status: "open" | "closed" };
 type AlertBreakRow = { id: string; sales_rep_id: string; store_id: string | null; reason: string | null; started_at: string; ended_at: string | null };
 
@@ -985,12 +1071,18 @@ function minutesSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 60000;
 }
 
+function formatAlertTime(iso?: string): string {
+  if (!iso) return "sem registro";
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
 const ALERTS_POLL_MS = 60_000;
 
 function useAlerts(stores: Store[], reps: RepOption[]) {
   const [todayRows, setTodayRows] = useState<AlertRow[]>([]);
   const [yesterdayRows, setYesterdayRows] = useState<AlertRow[]>([]);
   const [breakRows, setBreakRows] = useState<AlertBreakRow[]>([]);
+  const { hours } = useStoreOperatingHours(stores.map((s) => s.id));
 
   useEffect(() => {
     let alive = true;
@@ -1018,14 +1110,18 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
   return useMemo(() => {
     const alerts: DashboardAlert[] = [];
     const now = new Date();
-    const nowWithinHours = isWithinOperatingHours(now);
-    const storeName = (id: string | null) => stores.find((s) => s.id === id)?.name ?? "Loja";
+    const nowIso = now.toISOString();
+    const storeById = new Map(stores.map((s) => [s.id, s]));
+    const storeName = (id: string | null) => storeById.get(id ?? "")?.name ?? "Loja";
     const repName = (id: string) => reps.find((r) => r.id === id)?.name ?? "Vendedora";
+    const isStoreOperational = (sid: string) => {
+      const store = storeById.get(sid);
+      return Boolean(store && getStoreOperationalState(store, hours, now) === "open");
+    };
 
     const storeIds = Array.from(
-      new Set([...todayRows.map((r) => r.store_id), ...breakRows.map((b) => b.store_id)].filter((x): x is string => Boolean(x))),
+      new Set([...stores.map((s) => s.id), ...todayRows.map((r) => r.store_id), ...breakRows.map((b) => b.store_id)].filter((x): x is string => Boolean(x))),
     );
-
     const convByStore = new Map<string, { conv: number; n: number }>();
 
     for (const sid of storeIds) {
@@ -1037,7 +1133,6 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
 
       if (closedToday.length > 0) convByStore.set(sid, { conv: (salesToday.length / closedToday.length) * 100, n: closedToday.length });
 
-      // Regra: conversão caiu (mínimo de amostra pra não alertar por 1 ou 2 atendimentos)
       if (closedToday.length >= 5 && closedYesterday.length >= 5) {
         const convToday = (salesToday.length / closedToday.length) * 100;
         const convYesterday = (salesYesterday.length / closedYesterday.length) * 100;
@@ -1046,53 +1141,50 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
           alerts.push({
             id: `conv-${sid}`,
             severity: "warning",
-            message: `${storeName(sid)}: conversão caiu ${drop.toFixed(0)} pontos percentuais hoje em relação a ontem.`,
+            title: storeName(sid),
+            message: `Conversao caiu ${drop.toFixed(0)} pontos percentuais hoje em relacao a ontem.`,
             storeId: sid,
+            createdAt: nowIso,
           });
         }
       }
 
-      // Regra: fila aumentando (atendimentos em aberto há mais de 15 min)
       const stuckInQueue = storeToday.filter((r) => r.status === "open" && minutesSince(r.created_at) >= 15);
-      if (stuckInQueue.length > 5) {
+      if (isStoreOperational(sid) && stuckInQueue.length > 5) {
         alerts.push({
           id: `fila-${sid}`,
           severity: "warning",
-          message: `${storeName(sid)}: ${stuckInQueue.length} atendimentos em espera há mais de 15 minutos.`,
+          title: storeName(sid),
+          message: `${stuckInQueue.length} atendimentos em espera ha mais de 15 minutos.`,
           storeId: sid,
+          createdAt: stuckInQueue.sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.created_at ?? nowIso,
         });
       }
 
-      // Regra: nenhuma venda há muito tempo (só durante o horário operacional)
-      if (nowWithinHours && storeToday.length > 0) {
+      if (isStoreOperational(sid)) {
         const lastSale = [...salesToday].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-        const minsSinceSale = lastSale ? minutesSince(lastSale.created_at) : null;
-        if (minsSinceSale === null || minsSinceSale >= 60) {
-          alerts.push({
-            id: `semvenda-${sid}`,
-            severity: "critical",
-            message: `${storeName(sid)}: nenhuma venda há mais de 1 hora.`,
-            storeId: sid,
-          });
-        }
-      }
-
-      // Regra: loja sem movimento algum (só durante o horário operacional)
-      if (nowWithinHours) {
         const lastActivity = [...storeToday].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        const minsSinceSale = lastSale ? minutesSince(lastSale.created_at) : null;
         const minsSinceActivity = lastActivity ? minutesSince(lastActivity.created_at) : null;
-        if (minsSinceActivity === null || minsSinceActivity >= 90) {
+        const saleStopped = storeToday.length > 0 && (minsSinceSale === null || minsSinceSale >= 60);
+        const activityStopped = minsSinceActivity === null || minsSinceActivity >= 90;
+        if (saleStopped || activityStopped) {
           alerts.push({
-            id: `semmov-${sid}`,
+            id: `operacional-${sid}`,
             severity: "critical",
-            message: `${storeName(sid)}: sem nenhum atendimento registrado há mais de 1h30.`,
+            title: storeName(sid),
+            message: "Sem movimentacao operacional.",
             storeId: sid,
+            createdAt: lastActivity?.created_at ?? lastSale?.created_at ?? nowIso,
+            details: [
+              `Ultima venda: ${formatAlertTime(lastSale?.created_at)}`,
+              `Ultimo atendimento: ${formatAlertTime(lastActivity?.created_at)}`,
+            ],
           });
         }
       }
 
-      // Regra: pausas acima do normal (soma de minutos em pausa hoje, na loja toda)
-      const storeBreaksToday = breakRows.filter((b) => b.store_id === sid && b.reason !== "Fora horário de trabalho");
+      const storeBreaksToday = breakRows.filter((b) => b.store_id === sid && b.reason !== "Fora horario de trabalho");
       const totalPauseMin = storeBreaksToday.reduce((sum, b) => {
         const endMs = b.ended_at ? new Date(b.ended_at).getTime() : Date.now();
         return sum + (endMs - new Date(b.started_at).getTime()) / 60000;
@@ -1101,13 +1193,14 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
         alerts.push({
           id: `pausa-${sid}`,
           severity: "info",
-          message: `${storeName(sid)}: ${Math.round(totalPauseMin)} minutos de pausa acumulados hoje.`,
+          title: storeName(sid),
+          message: `${Math.round(totalPauseMin)} minutos de pausa acumulados hoje.`,
           storeId: sid,
+          createdAt: storeBreaksToday.sort((a, b) => b.started_at.localeCompare(a.started_at))[0]?.started_at ?? nowIso,
         });
       }
     }
 
-    // Regra: loja destoante das demais (só faz sentido com 2+ lojas com amostra mínima)
     const comparable = Array.from(convByStore.entries()).filter(([, v]) => v.n >= 5);
     if (comparable.length >= 2) {
       for (const [sid, v] of comparable) {
@@ -1117,14 +1210,15 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
           alerts.push({
             id: `destoante-${sid}`,
             severity: "info",
-            message: `${storeName(sid)}: conversão bem abaixo da média das outras lojas hoje (${v.conv.toFixed(0)}% vs. ${avgOthers.toFixed(0)}%).`,
+            title: storeName(sid),
+            message: `Conversao bem abaixo da media das outras lojas hoje (${v.conv.toFixed(0)}% vs. ${avgOthers.toFixed(0)}%).`,
             storeId: sid,
+            createdAt: nowIso,
           });
         }
       }
     }
 
-    // Regra: vendedora zerada há muito tempo (em atendimento há 2h+ sem nenhuma venda)
     const repIdsToday = Array.from(new Set(todayRows.map((r) => r.sales_rep_id)));
     for (const rid of repIdsToday) {
       const rows = todayRows.filter((r) => r.sales_rep_id === rid && r.status === "closed");
@@ -1133,18 +1227,24 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
       if (sales.length > 0) continue;
       const firstRow = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
       const hoursSinceFirst = minutesSince(firstRow.created_at) / 60;
-      if (hoursSinceFirst >= 2) {
+      const sid = rows[0].store_id;
+      if (hoursSinceFirst >= 2 && (!sid || isStoreOperational(sid))) {
         alerts.push({
           id: `zerada-${rid}`,
           severity: "info",
-          message: `${repName(rid)} está há mais de 2h sem nenhuma venda hoje (${rows.length} atendimento${rows.length > 1 ? "s" : ""}).`,
-          storeId: rows[0].store_id,
+          title: repName(rid),
+          message: `Ha mais de 2h sem nenhuma venda hoje (${rows.length} atendimento${rows.length > 1 ? "s" : ""}).`,
+          storeId: sid,
+          createdAt: firstRow.created_at,
         });
       }
     }
 
-    return alerts.sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
-  }, [todayRows, yesterdayRows, breakRows, stores, reps]);
+    return alerts.sort((a, b) => {
+      const severity = severityRank(b.severity) - severityRank(a.severity);
+      return severity !== 0 ? severity : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [todayRows, yesterdayRows, breakRows, stores, reps, hours]);
 }
 
 function AlertBanner({ alert }: { alert: DashboardAlert }) {
@@ -1159,8 +1259,83 @@ function AlertBanner({ alert }: { alert: DashboardAlert }) {
   return (
     <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${styles}`}>
       <Icon size={16} className="mt-0.5 shrink-0" />
-      <p><span className="font-bold">{label}:</span> {alert.message}</p>
+      <div>
+        <p><span className="font-bold">{label}:</span> {alert.title}</p>
+        <p>{alert.message}</p>
+        {alert.details && (
+          <div className="mt-1 space-y-0.5 text-xs opacity-80">
+            {alert.details.map((detail) => <p key={detail}>{detail}</p>)}
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function severityLabel(severity: AlertSeverity): string {
+  return severity === "critical" ? "Criticas" : severity === "warning" ? "Atencao" : "Informativas";
+}
+
+function NotificationBell() {
+  const { stores } = useStores();
+  const [reps, setReps] = useState<RepOption[]>([]);
+  const alerts = useAlerts(stores, reps);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      supabase.from("sales_reps").select("id,name,store_id,active").then(({ data }) => {
+        if (alive) setReps((data as RepOption[]) ?? []);
+      });
+    load();
+    const interval = setInterval(load, ALERTS_POLL_MS);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
+
+  const groups = useMemo(
+    () => (["critical", "warning", "info"] as AlertSeverity[]).map((severity) => ({
+      severity,
+      label: severityLabel(severity),
+      items: alerts.filter((a) => a.severity === severity).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    })),
+    [alerts],
+  );
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="relative rounded-lg border border-white/30 p-2 hover:bg-white/10" aria-label="Notificacoes">
+          <Bell size={19} />
+          {alerts.length > 0 && (
+            <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-destructive px-1 text-center text-[10px] font-bold text-destructive-foreground">
+              {alerts.length}
+            </span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-[70vh] w-96 overflow-y-auto">
+        <DropdownMenuLabel>Central de Notificacoes</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {alerts.length === 0 ? (
+          <div className="px-3 py-4 text-sm text-muted-foreground">Nenhuma notificacao ativa.</div>
+        ) : (
+          groups.map((group) => group.items.length > 0 && (
+            <div key={group.severity} className="py-1">
+              <p className="px-3 py-1 text-xs font-bold uppercase text-muted-foreground">{group.label}</p>
+              {group.items.map((alert) => (
+                <div key={alert.id} className="px-3 py-2 text-sm">
+                  <p className="font-semibold text-foreground">{alert.title}</p>
+                  <p className="text-muted-foreground">{alert.message}</p>
+                  {alert.details?.map((detail) => (
+                    <p key={detail} className="text-xs text-muted-foreground">{detail}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1483,12 +1658,6 @@ function Dashboard() {
   const commissionSummary = useCommissionSummary(actor, storeId, stores, commissionPeriod);
   const previousCommissionSummary = useCommissionSummary(actor, storeId, stores, compareEnabled ? previousMonthYear : null);
 
-  const allAlerts = useAlerts(stores, reps);
-  const visibleAlerts = useMemo(
-    () => (storeId === ALL_STORES ? allAlerts : allAlerts.filter((a) => a.storeId === storeId || a.storeId === null)),
-    [allAlerts, storeId],
-  );
-
   const ranking = useMemo(() => {
     const map = new Map<string, { atendimentos: number; vendas: number }>();
     for (const a of filteredData) {
@@ -1624,14 +1793,6 @@ function Dashboard() {
           Comparar com período anterior
         </label>
       </div>
-
-      {visibleAlerts.length > 0 && (
-        <div className="mb-6 space-y-2">
-          {visibleAlerts.map((a) => (
-            <AlertBanner key={a.id} alert={a} />
-          ))}
-        </div>
-      )}
 
       {/* xl (não md): em tablet — retrato ou paisagem — os 4 KPIs ficam 2x2; só desktop de verdade vira uma fileira só. */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -1908,22 +2069,32 @@ function useStoreCardsData(stores: Store[]) {
   }, [stores]);
 
   const alerts = useAlerts(stores, reps);
-  return { overview, alerts };
+  const { hours } = useStoreOperatingHours(stores.map((s) => s.id));
+  return { overview, alerts, hours };
 }
 
 function StoreCard({
   store,
   overview,
   alertCount,
+  operationalState,
   onOpen,
   actions,
 }: {
   store: Store;
   overview?: StoreLiveOverview;
   alertCount: number;
+  operationalState: StoreOperationalState;
   onOpen: () => void;
   actions: React.ReactNode;
 }) {
+  const stateStyles =
+    operationalState === "open"
+      ? "bg-emerald-100 text-emerald-800"
+      : operationalState === "closed"
+        ? "bg-muted text-muted-foreground"
+        : "bg-destructive/10 text-destructive";
+
   return (
     <div
       role="button"
@@ -1944,15 +2115,16 @@ function StoreCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-lg font-bold">{store.name}</p>
-          {store.active ? (
-            alertCount > 0 && (
-              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
+          <div className="mt-1 flex flex-wrap gap-1">
+            <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${stateStyles}`}>
+              {operationalStateLabel(operationalState)}
+            </span>
+            {store.active && alertCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
                 <AlertTriangle size={12} /> {alertCount} alerta{alertCount > 1 ? "s" : ""}
               </span>
-            )
-          ) : (
-            <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Inativa</span>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -2159,6 +2331,7 @@ function StoreManagementCenter({
   store,
   stores,
   alerts,
+  operationalState,
   onBack,
   onOpenRep,
   onOpenTeamTab,
@@ -2168,6 +2341,7 @@ function StoreManagementCenter({
   store: Store;
   stores: Store[];
   alerts: DashboardAlert[];
+  operationalState: StoreOperationalState;
   onBack: () => void;
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
@@ -2201,10 +2375,14 @@ function StoreManagementCenter({
           </div>
           <span
             className={`rounded-full px-3 py-1 text-sm font-bold ${
-              store.active ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"
+              operationalState === "open"
+                ? "bg-emerald-100 text-emerald-800"
+                : operationalState === "closed"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-destructive/10 text-destructive"
             }`}
           >
-            {store.active ? "Ativa" : "Inativa"}
+            {operationalStateLabel(operationalState)}
           </span>
         </div>
       </header>
@@ -2352,6 +2530,11 @@ function StoreConfigSection({
   const actor = getAdminActor();
   const canManageManagers = actor?.role === "admin" || actor?.role === "super_admin";
   const { managers, currentManager, loading: managersLoading, reload: reloadManagers } = useStoreManagers(store.manager_id);
+  const { hours, reload: reloadHours } = useStoreOperatingHours([store.id]);
+  const operatingHours = useMemo(() => {
+    const existing = new Map(hours.filter((h) => h.store_id === store.id).map((h) => [h.weekday, h]));
+    return defaultOperatingHours(store.id).map((day) => existing.get(day.weekday) ?? day);
+  }, [hours, store.id]);
 
   const renamePrompt = async () => {
     const v = prompt("Novo nome da loja:", store.name);
@@ -2428,6 +2611,26 @@ function StoreConfigSection({
     const { error } = await supabase.from("stores").update({ manager_id: null }).eq("id", store.id);
     if (error) return toast.error(error.message);
     toast.success("Vínculo removido"); onChanged();
+  };
+
+  const updateOperatingHour = async (row: StoreOperatingHour, patch: Partial<StoreOperatingHour>) => {
+    const next = { ...row, ...patch };
+    if (next.is_open && minutesFromTime(next.opens_at) >= minutesFromTime(next.closes_at)) {
+      toast.error("Horario de abertura deve ser menor que o fechamento");
+      return;
+    }
+    const { error } = await supabase
+      .from("store_operating_hours")
+      .upsert({
+        store_id: store.id,
+        weekday: next.weekday,
+        is_open: next.is_open,
+        opens_at: normalizeTime(next.opens_at),
+        closes_at: normalizeTime(next.closes_at),
+      }, { onConflict: "store_id,weekday" });
+    if (error) return toast.error(error.message);
+    toast.success("Horario atualizado");
+    reloadHours();
   };
 
   return (
@@ -2524,6 +2727,46 @@ function StoreConfigSection({
               </button>
             </div>
           )}
+        </div>
+
+
+        <div className="rounded-xl border border-border p-4 md:col-span-2">
+          <div className="mb-3 flex items-center gap-2">
+            <Clock size={16} className="text-brand" />
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Funcionamento</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {operatingHours.map((day) => {
+              const meta = WEEKDAYS.find((d) => d.weekday === day.weekday)!;
+              return (
+                <div key={day.weekday} className="grid grid-cols-[92px_72px_1fr_1fr] items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <span className="text-sm font-semibold">{meta.label}</span>
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={day.is_open}
+                      onChange={(e) => updateOperatingHour(day, { is_open: e.target.checked })}
+                    />
+                    Aberta
+                  </label>
+                  <input
+                    type="time"
+                    value={normalizeTime(day.opens_at)}
+                    disabled={!day.is_open}
+                    onChange={(e) => updateOperatingHour(day, { opens_at: e.target.value })}
+                    className="min-w-0 rounded-lg border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                  />
+                  <input
+                    type="time"
+                    value={normalizeTime(day.closes_at)}
+                    disabled={!day.is_open}
+                    onChange={(e) => updateOperatingHour(day, { closes_at: e.target.value })}
+                    className="min-w-0 rounded-lg border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
@@ -2641,14 +2884,21 @@ function StoresTab({
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
-  const { overview, alerts } = useStoreCardsData(stores);
+  const { overview, alerts, hours } = useStoreCardsData(stores);
 
   const add = async () => {
     if (!name.trim()) return toast.error("Informe o nome");
     const finalPin = pin.trim() || randomPin();
     if (!/^\d{4,8}$/.test(finalPin)) return toast.error("PIN deve ter 4 a 8 dígitos");
-    const { error } = await supabase.from("stores").insert({ name: name.trim(), pin: finalPin });
+    const { data, error } = await supabase.from("stores").insert({ name: name.trim(), pin: finalPin }).select("id").single();
     if (error) return toast.error(error.message);
+    const { error: hoursError } = await supabase
+      .from("store_operating_hours")
+      .insert(defaultOperatingHours(data.id).map(({ store_id, weekday, is_open, opens_at, closes_at }) => ({ store_id, weekday, is_open, opens_at, closes_at })));
+    if (hoursError) {
+      await supabase.from("stores").delete().eq("id", data.id);
+      return toast.error(hoursError.message);
+    }
     setName(""); setPin(""); toast.success("Loja cadastrada"); reload();
   };
 
@@ -2667,6 +2917,7 @@ function StoresTab({
         store={selectedStore}
         stores={stores}
         alerts={alerts.filter((a) => a.storeId === selectedStore.id)}
+        operationalState={getStoreOperationalState(selectedStore, hours)}
         onBack={() => setSelectedStoreId(null)}
         onOpenRep={onOpenRep}
         onOpenTeamTab={onOpenTeamTab}
@@ -2709,6 +2960,7 @@ function StoresTab({
             store={s}
             overview={overview[s.id]}
             alertCount={alerts.filter((a) => a.storeId === s.id).length}
+            operationalState={getStoreOperationalState(s, hours)}
             onOpen={() => setSelectedStoreId(s.id)}
             actions={
               <button
