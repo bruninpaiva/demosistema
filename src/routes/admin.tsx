@@ -108,6 +108,10 @@ function isWithinOperatingHours(date: Date): boolean {
 
 function AdminPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [perRepFocusId, setPerRepFocusId] = useState<string | undefined>(undefined);
+  const [teamTabFocusStoreId, setTeamTabFocusStoreId] = useState<string | undefined>(undefined);
+  const goToRep = (repId: string) => { setPerRepFocusId(repId); setTab("por-vendedora"); };
+  const goToTeamTab = (storeId: string) => { setTeamTabFocusStoreId(storeId); setTab("vendedoras"); };
   const [authed, setAuthed] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(AUTH_KEY) === "1"
   );
@@ -277,10 +281,10 @@ function AdminPage() {
 
       <main className="mx-auto max-w-6xl p-4 md:p-8">
         {tab === "dashboard" && <Dashboard />}
-        {tab === "por-vendedora" && <PerRepTab />}
+        {tab === "por-vendedora" && <PerRepTab initialRepId={perRepFocusId} />}
         {tab === "pausas" && <BreaksTab />}
-        {tab === "lojas" && <StoresTab />}
-        {tab === "vendedoras" && <SalesRepsTab />}
+        {tab === "lojas" && <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} />}
+        {tab === "vendedoras" && <SalesRepsTab initialStoreId={teamTabFocusStoreId} />}
         {tab === "motivos" && <ReasonsTab />}
         {tab === "usuarios" && <UsersTab />}
         {tab === "promocoes" && <PromotionsTab />}
@@ -2086,12 +2090,30 @@ function commissionPeriodFor(preset: Preset, from: string, to: string): MonthYea
   return null;
 }
 
-function StoreIndicatorsSection({ store, stores }: { store: Store; stores: Store[] }) {
+function StoreIndicatorsSection({
+  store,
+  stores,
+  preset,
+  setPreset,
+  from,
+  setFrom,
+  to,
+  setTo,
+  start,
+  end,
+}: {
+  store: Store;
+  stores: Store[];
+  preset: Preset;
+  setPreset: (p: Preset) => void;
+  from: string;
+  setFrom: (v: string) => void;
+  to: string;
+  setTo: (v: string) => void;
+  start: Date;
+  end: Date;
+}) {
   const actor = getAdminActor();
-  const [preset, setPreset] = useState<Preset>("hoje");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const { start, end } = useMemo(() => rangeFor(preset, from, to), [preset, from, to]);
   const { data, loading } = useAttendances(start, end, store.id);
   const metrics = useDashboardMetrics(data);
   const breakMinutes = useBreakMinutes(start, end, store.id, ALL_REPS);
@@ -2132,12 +2154,21 @@ function StoreManagementCenter({
   stores,
   alerts,
   onBack,
+  onOpenRep,
+  onOpenTeamTab,
 }: {
   store: Store;
   stores: Store[];
   alerts: DashboardAlert[];
   onBack: () => void;
+  onOpenRep: (repId: string) => void;
+  onOpenTeamTab: (storeId: string) => void;
 }) {
+  const [preset, setPreset] = useState<Preset>("hoje");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const { start, end } = useMemo(() => rangeFor(preset, from, to), [preset, from, to]);
+
   return (
     <div className="space-y-5">
       <button
@@ -2170,8 +2201,19 @@ function StoreManagementCenter({
 
       <StoreAlertsSection alerts={alerts} />
       <StoreOperationalStatus storeId={store.id} />
-      <StoreIndicatorsSection store={store} stores={stores} />
-      <EmptyStoreSection title="Equipe" description="Em breve, lista vendedoras ativas da loja com status e desempenho." />
+      <StoreIndicatorsSection
+        store={store}
+        stores={stores}
+        preset={preset}
+        setPreset={setPreset}
+        from={from}
+        setFrom={setFrom}
+        to={to}
+        setTo={setTo}
+        start={start}
+        end={end}
+      />
+      <StoreTeamSection store={store} start={start} end={end} onOpenRep={onOpenRep} onOpenTeamTab={onOpenTeamTab} />
       <EmptyStoreSection
         title="Histórico recente"
         description="Em breve, exibe os últimos atendimentos e eventos relevantes da loja."
@@ -2184,7 +2226,111 @@ function StoreManagementCenter({
   );
 }
 
-function StoresTab() {
+function useActiveBreakStarts(storeId: string): Record<string, string> {
+  const [starts, setStarts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const { data } = await supabase
+        .from("rep_breaks")
+        .select("sales_rep_id,started_at")
+        .is("ended_at", null)
+        .eq("store_id", storeId);
+      if (!alive) return;
+      const next: Record<string, string> = {};
+      for (const b of (data ?? []) as { sales_rep_id: string; started_at: string }[]) next[b.sales_rep_id] = b.started_at;
+      setStarts(next);
+    };
+    load();
+    const interval = setInterval(load, LIVE_POLL_MS);
+    return () => { alive = false; clearInterval(interval); };
+  }, [storeId]);
+
+  return starts;
+}
+
+function StoreTeamSection({
+  store,
+  start,
+  end,
+  onOpenRep,
+  onOpenTeamTab,
+}: {
+  store: Store;
+  start: Date;
+  end: Date;
+  onOpenRep: (repId: string) => void;
+  onOpenTeamTab: (storeId: string) => void;
+}) {
+  const { reps, loading } = useStoreQueue(store.id);
+  const activeBreakStarts = useActiveBreakStarts(store.id);
+  const { data } = useAttendances(start, end, store.id);
+
+  const perRep = useMemo(() => {
+    const map = new Map<string, { att: number; sales: number }>();
+    for (const a of data) {
+      const cur = map.get(a.sales_rep_id) ?? { att: 0, sales: 0 };
+      cur.att++;
+      if (a.type === "sale") cur.sales++;
+      map.set(a.sales_rep_id, cur);
+    }
+    return map;
+  }, [data]);
+
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h4 className="text-base font-bold text-foreground">Equipe</h4>
+        <button onClick={() => onOpenTeamTab(store.id)} className="text-xs font-semibold text-brand hover:underline">
+          Gerenciar equipe
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Carregando equipe...</p>
+      ) : reps.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nenhuma vendedora ativa nesta loja.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {reps.map((rep) => {
+            const perf = perRep.get(rep.id) ?? { att: 0, sales: 0 };
+            const conv = perf.att > 0 ? (perf.sales / perf.att) * 100 : 0;
+            const breakStart = activeBreakStarts[rep.id];
+            return (
+              <button
+                key={rep.id}
+                onClick={() => onOpenRep(rep.id)}
+                className="flex flex-col gap-2 rounded-xl border border-border p-4 text-left transition hover:border-brand hover:shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-semibold text-foreground">{rep.name}</span>
+                  <RepStatusChip status={rep.status} />
+                </div>
+                {breakStart && (
+                  <p className="text-xs text-muted-foreground">
+                    Em pausa há {formatMinutes((Date.now() - new Date(breakStart).getTime()) / 60000)}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  {perf.att} atend. · <span className="font-semibold text-success">{conv.toFixed(0)}% conv.</span>
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StoresTab({
+  onOpenRep,
+  onOpenTeamTab,
+}: {
+  onOpenRep: (repId: string) => void;
+  onOpenTeamTab: (storeId: string) => void;
+}) {
   const { stores, reload } = useStores();
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
@@ -2250,6 +2396,8 @@ function StoresTab() {
         stores={stores}
         alerts={alerts.filter((a) => a.storeId === selectedStore.id)}
         onBack={() => setSelectedStoreId(null)}
+        onOpenRep={onOpenRep}
+        onOpenTeamTab={onOpenTeamTab}
       />
     );
   }
@@ -2330,11 +2478,11 @@ function StoresTab() {
 
 type Rep = { id: string; name: string; active: boolean; store_id: string | null };
 
-function SalesRepsTab() {
+function SalesRepsTab({ initialStoreId }: { initialStoreId?: string }) {
   const [reps, setReps] = useState<Rep[]>([]);
   const [name, setName] = useState("");
   const [newStoreId, setNewStoreId] = useState<string>("");
-  const [filterStoreId, setFilterStoreId] = useState<string>(ALL_STORES);
+  const [filterStoreId, setFilterStoreId] = useState<string>(initialStoreId ?? ALL_STORES);
   const { stores } = useStores();
 
   const load = () =>
@@ -2507,7 +2655,7 @@ function ReasonsTab() {
 
 // ------------ Per rep tab ------------
 
-function PerRepTab() {
+function PerRepTab({ initialRepId }: { initialRepId?: string }) {
   const [preset, setPreset] = useState<Preset>("mes");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -2517,7 +2665,7 @@ function PerRepTab() {
   const { data, loading } = useAttendances(start, end, storeId);
   const [reps, setReps] = useState<Rep[]>([]);
   const [reasons, setReasons] = useState<{ id: string; label: string }[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialRepId ?? null);
 
   useEffect(() => {
     supabase.from("sales_reps").select("id,name,active,store_id").order("name").then(({ data }) => setReps((data ?? []) as Rep[]));
