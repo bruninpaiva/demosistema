@@ -171,6 +171,12 @@ function PinGate({ store, onOk }: { store: Store; onOk: () => void }) {
           <img src="/bpinfo-logo.jpg" alt="BP Demo" className="h-6 w-auto" />
         </div>
         <h1 className="text-lg font-bold">{store.name}</h1>
+        <Link
+          to="/admin"
+          className="ml-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-brand-foreground/80 transition hover:bg-white/10 hover:text-brand-foreground"
+        >
+          Painel de gestão
+        </Link>
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4">
