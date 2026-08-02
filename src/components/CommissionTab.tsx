@@ -867,6 +867,14 @@ function WorkView({
   const fileBase = `comissoes_${info.store_name.replace(/\s+/g, "_")}_${info.year}-${String(info.month).padStart(2, "0")}`;
 
   const nivelLabel = premio.nivel === "hiper" ? "Hiper Meta" : premio.nivel === "super" ? "Super Meta" : premio.nivel === "meta" ? "Meta" : "—";
+  const metaGoals = [
+    { label: "Meta", value: metas.meta, pct: pctMeta, hit: hitMeta, reward: PREMIO_META, tone: "bg-emerald-500" },
+    { label: "Super", value: metas.superMeta, pct: pctSuper, hit: hitSuper, reward: PREMIO_SUPER, tone: "bg-indigo-500" },
+    { label: "Hiper", value: metas.hiperMeta, pct: pctHiper, hit: hitHiper, reward: PREMIO_HIPER, tone: "bg-fuchsia-500" },
+  ].filter((goal) => goal.value > 0);
+  const nextGoal = metaGoals.find((goal) => !goal.hit) ?? metaGoals[metaGoals.length - 1];
+  const highestGoal = metaGoals[metaGoals.length - 1]?.value ?? metas.meta;
+  const trackPct = highestGoal > 0 ? Math.min(100, (totals.liquido / highestGoal) * 100) : 0;
 
   const exportExcel = () => {
     const data = ranking.map((v, i) => {
@@ -1089,34 +1097,46 @@ function WorkView({
   };
 
   /* ---------- Sub-widgets ---------- */
-  const MetaCard = ({ label, value, hit, tone }: { label: string; value: number; hit: boolean; tone: string }) => (
-    <div className={`rounded-xl border p-4 ${hit ? "border-emerald-300 bg-emerald-50" : "border-border bg-card"}`}>
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
-        {hit && <CheckCircle2 className="text-emerald-600" size={18} />}
+  const MetaProgressTrack = () => (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-semibold text-foreground">Progresso da meta</span>
+        <span className="text-muted-foreground">
+          {nextGoal ? `${BRL(Math.max(0, nextGoal.value - totals.liquido))} para ${nextGoal.label}` : "Metas não definidas"}
+        </span>
       </div>
-      <div className={`mt-1 text-2xl font-bold ${tone}`}>{value > 0 ? BRL(value) : "—"}</div>
+      <div className="relative h-4 rounded-full bg-muted">
+        <div className="h-4 rounded-full bg-brand" style={{ width: `${trackPct}%` }} />
+        {metaGoals.map((goal) => (
+          <div
+            key={goal.label}
+            className="absolute top-1/2 flex -translate-y-1/2 flex-col items-center"
+            style={{ left: `${Math.min(100, (goal.value / highestGoal) * 100)}%` }}
+          >
+            <span className={`h-5 w-1 rounded-full ${goal.hit ? goal.tone : "bg-border"}`} />
+          </div>
+        ))}
+      </div>
+      {metaGoals.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+          Configure as metas para acompanhar o progresso.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {metaGoals.map((goal) => (
+            <div key={goal.label} className={`rounded-lg border px-3 py-2 ${goal.hit ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-border bg-background"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase text-muted-foreground">{goal.label}</span>
+                {goal.hit && <CheckCircle2 size={14} />}
+              </div>
+              <div className="mt-0.5 font-bold">{BRL(goal.value)}</div>
+              <div className="text-xs text-muted-foreground">{PCT(Math.min(100, goal.pct))} · prêmio {BRL(goal.reward)}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
-
-  const ProgressBar = ({ label, current, target, hit }: { label: string; current: number; target: number; hit: boolean }) => {
-    const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
-    if (target <= 0) return null;
-    return (
-      <div>
-        <div className="mb-1 flex items-center justify-between text-sm">
-          <span className="font-semibold">{label} {hit && <CheckCircle2 className="inline text-emerald-600" size={14} />}</span>
-          <span className="text-muted-foreground">{BRL(current)} / {BRL(target)} · {PCT(pct)}</span>
-        </div>
-        <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={`h-full transition-all ${hit ? "bg-emerald-500" : "bg-brand"}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -1195,119 +1215,96 @@ function WorkView({
         </div>
       ) : (
         <>
-          {/* Metas cards */}
+          {/* Resumo principal */}
           {canFinance && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <MetaCard label="Meta Mensal" value={metas.meta} hit={hitMeta} tone="text-brand" />
-              <MetaCard label="Super Meta" value={metas.superMeta} hit={hitSuper} tone="text-indigo-600" />
-              <MetaCard label="Hiper Meta" value={metas.hiperMeta} hit={hitHiper} tone="text-fuchsia-600" />
-              <div className="rounded-xl border border-brand bg-brand p-4 text-white">
-                <div className="text-xs font-semibold uppercase tracking-wide text-white/80">Venda Atual</div>
-                <div className="mt-1 text-2xl font-bold">{BRL(totals.liquido)}</div>
-                <div className="mt-1 text-xs text-white/80">{PCT(pctMeta)} da meta</div>
-              </div>
-            </div>
-          )}
-
-          {/* Progress bars */}
-          {canFinance && (
-            <div className="space-y-4 rounded-xl border border-border bg-card p-5">
-              <ProgressBar label="Meta" current={totals.liquido} target={metas.meta} hit={hitMeta} />
-              <ProgressBar label="Super Meta" current={totals.liquido} target={metas.superMeta} hit={hitSuper} />
-              <ProgressBar label="Hiper Meta" current={totals.liquido} target={metas.hiperMeta} hit={hitHiper} />
-            </div>
-          )}
-
-          {/* Status card */}
-          {canFinance && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                { label: "Meta", hit: hitMeta, pct: pctMeta, target: metas.meta },
-                { label: "Super Meta", hit: hitSuper, pct: pctSuper, target: metas.superMeta },
-                { label: "Hiper Meta", hit: hitHiper, pct: pctHiper, target: metas.hiperMeta },
-              ].map((x) => (
-                <div key={x.label} className={`rounded-xl border p-4 ${x.target <= 0 ? "border-border bg-muted/50" : x.hit ? "border-emerald-300 bg-emerald-50" : x.pct > 0 ? "border-amber-300 bg-amber-50" : "border-border bg-card"}`}>
-                  <div className="text-sm font-semibold">{x.label}</div>
-                  <div className={`mt-1 text-lg font-bold ${x.hit ? "text-emerald-700" : x.pct > 0 ? "text-amber-700" : "text-muted-foreground"}`}>
-                    {x.target <= 0 ? "Não definida" : x.hit ? "✔ Atingida" : x.pct > 0 ? "Em andamento" : "Não iniciada"}
-                  </div>
-                  {x.target > 0 && <div className="mt-1 text-xs text-muted-foreground">Faltam {BRL(Math.max(0, x.target - totals.liquido))}</div>}
+            <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.4fr_1fr]">
+                <div className="rounded-xl border border-brand/20 bg-brand p-4 text-white">
+                  <div className="text-xs font-bold uppercase tracking-wide text-white/80">Venda Atual</div>
+                  <div className="mt-2 text-3xl font-extrabold">{BRL(totals.liquido)}</div>
+                  <div className="mt-1 text-sm text-white/80">{PCT(pctMeta)} da Meta Mensal</div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Premiação por Meta */}
-          {canFinance && (
-            <div className={`rounded-xl border p-5 ${premio.valor > 0 ? "border-emerald-300 bg-gradient-to-br from-emerald-50 to-white" : "border-dashed border-border bg-muted/30"}`}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Premiação por atingimento de meta</div>
-                  <div className="mt-1 flex items-center gap-2 text-2xl font-bold">
-                    {premio.valor > 0 ? (
-                      <>
-                        <CheckCircle2 className="text-emerald-600" size={22} />
-                        <span className="text-emerald-700">✔ {premio.motivo}</span>
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">Nenhuma meta atingida</span>
-                    )}
-                  </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <MetaProgressTrack />
                 </div>
-                <div className="grid grid-cols-3 gap-4 text-right">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase text-muted-foreground">Individual</div>
-                    <div className="text-lg font-bold text-brand">{BRL(premio.valor)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase text-muted-foreground">Funcionárias</div>
-                    <div className="text-lg font-bold">{INT(premio.valor > 0 ? vendedoras.length : 0)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase text-muted-foreground">Total</div>
-                    <div className="text-lg font-bold text-emerald-700">{BRL(premioTotal)}</div>
+                <div className="rounded-xl border border-brand bg-brand/5 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Comissão Final</div>
+                  <div className="mt-2 text-3xl font-extrabold text-brand">{BRL(comissaoFinalTotal)}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    Base {BRL(totals.comissao)} + prêmio {BRL(premioTotal)}
                   </div>
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className={`rounded-full px-2.5 py-1 font-semibold ${premio.nivel === "meta" ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground"}`}>Meta · {BRL(PREMIO_META)}</span>
-                <span className={`rounded-full px-2.5 py-1 font-semibold ${premio.nivel === "super" ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground"}`}>Super · {BRL(PREMIO_SUPER)}</span>
-                <span className={`rounded-full px-2.5 py-1 font-semibold ${premio.nivel === "hiper" ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground"}`}>Hiper · {BRL(PREMIO_HIPER)}</span>
-                <span className="ml-auto text-muted-foreground">Premiações não são cumulativas — considera apenas a maior meta atingida.</span>
+              <div className={`mt-4 rounded-xl border p-4 ${premio.valor > 0 ? "border-emerald-300 bg-emerald-50" : "border-border bg-muted/30"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiação por atingimento</div>
+                    <div className="mt-1 flex items-center gap-2 text-lg font-bold">
+                      {premio.valor > 0 && <CheckCircle2 className="text-emerald-600" size={18} />}
+                      <span className={premio.valor > 0 ? "text-emerald-700" : "text-muted-foreground"}>{premio.motivo}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-5 text-right">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Individual</div>
+                      <div className="font-extrabold text-brand">{BRL(premio.valor)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Funcionárias</div>
+                      <div className="font-extrabold">{INT(premio.valor > 0 ? vendedoras.length : 0)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Total</div>
+                      <div className="font-extrabold text-emerald-700">{BRL(premioTotal)}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
           )}
 
           {/* KPIs */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-            <Kpi icon={<Users size={18} />} label="Funcionárias" value={INT(vendedoras.length)} />
-            <Kpi icon={<Trophy size={18} />} label="Vendas" value={INT(totals.vendas)} />
-            <Kpi icon={<Package size={18} />} label="Peças" value={INT(totals.uni)} />
-            <Kpi icon={<Target size={18} />} label="TM Geral" value={BRL(totals.tm)} />
-            <Kpi icon={<Award size={18} />} label="PA Geral" value={NUM(totals.pa)} />
-            <Kpi icon={<Medal size={18} />} label="PM Geral" value={BRL(totals.pm)} />
-            {canFinance && <Kpi icon={<Target size={18} />} label="Comissão Base" value={BRL(totals.comissao)} />}
-            {canFinance && <Kpi icon={<Award size={18} />} label="Premiação Total" value={BRL(premioTotal)} tone={premio.valor > 0 ? "bg-emerald-600 text-white" : undefined} />}
-            {canFinance && <Kpi icon={<Trophy size={18} />} label="Comissão Final Total" value={BRL(comissaoFinalTotal)} tone="bg-brand text-white" />}
-            {canFinance && <Kpi icon={<CheckCircle2 size={18} />} label="% atingido" value={PCT(pctMeta)} />}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <KpiGroup title="Operação">
+              <Kpi icon={<Users size={18} />} label="Funcionárias" value={INT(vendedoras.length)} />
+              <Kpi icon={<Trophy size={18} />} label="Vendas" value={INT(totals.vendas)} />
+              <Kpi icon={<Package size={18} />} label="Peças" value={INT(totals.uni)} />
+            </KpiGroup>
+            <KpiGroup title="Performance">
+              <Kpi icon={<Target size={18} />} label="TM Geral" value={BRL(totals.tm)} />
+              <Kpi icon={<Award size={18} />} label="PA Geral" value={NUM(totals.pa)} />
+              <Kpi icon={<Medal size={18} />} label="PM Geral" value={BRL(totals.pm)} />
+            </KpiGroup>
+            {canFinance && (
+              <KpiGroup title="Financeiro">
+                <Kpi icon={<Target size={18} />} label="Comissão Base" value={BRL(totals.comissao)} />
+                <Kpi icon={<Award size={18} />} label="Premiação" value={BRL(premioTotal)} />
+                <Kpi icon={<Trophy size={18} />} label="Comissão Final" value={BRL(comissaoFinalTotal)} tone="bg-brand text-white" />
+              </KpiGroup>
+            )}
           </div>
 
           {/* Ranking podium */}
-          <div className="rounded-xl border border-border bg-card p-5">
-            <h3 className="mb-3 flex items-center gap-2 text-lg font-bold">
-              <Trophy className="text-yellow-500" size={20} /> Ranking
-            </h3>
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="flex items-center gap-2 text-xl font-extrabold text-foreground">
+                <Trophy className="text-yellow-500" size={22} /> Ranking
+              </h3>
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">Ordenado por venda líquida</span>
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {ranking.slice(0, 3).map((v, i) => {
-                const medals = ["🥇", "🥈", "🥉"];
                 const bgs = ["from-yellow-100 to-yellow-50 border-yellow-300", "from-gray-100 to-gray-50 border-gray-300", "from-orange-100 to-orange-50 border-orange-300"];
                 return (
                   <button
                     key={v.nome}
                     onClick={() => setDetail(v)}
-                    className={`rounded-xl border bg-gradient-to-br ${bgs[i]} p-4 text-left transition hover:shadow-md`}
+                    className={`rounded-xl border bg-gradient-to-br ${bgs[i]} p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md`}
                   >
-                    <div className="flex items-center gap-2 text-2xl">{medals[i]} <span className="text-base font-bold">{v.nome}</span></div>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-sm font-extrabold text-brand shadow-sm">#{i + 1}</span>
+                      <span className="min-w-0 truncate text-base font-extrabold text-foreground">{v.nome}</span>
+                    </div>
                     <div className="mt-1 text-sm text-muted-foreground">
                       {canFinance ? BRL(v.liquido) : `${INT(v.vendas)} vendas · ${INT(v.uni)} peças`}
                     </div>
@@ -1325,7 +1322,7 @@ function WorkView({
           </div>
 
           {/* Table */}
-          <div className="rounded-xl border border-border bg-card">
+          <div className="rounded-2xl border border-border bg-card shadow-sm">
             <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
               <div className="relative flex-1 min-w-[220px]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
@@ -1342,6 +1339,7 @@ function WorkView({
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
                   <tr>
+                    <th className="w-16 px-3 py-3 text-right">#</th>
                     <Th onClick={() => setSort("nome")} active={sortKey === "nome"} dir={sortDir}>Nome</Th>
                     {canFinance && <Th onClick={() => setSort("liquido")} active={sortKey === "liquido"} dir={sortDir} num>Venda Líquida</Th>}
                     {canFinance && <Th onClick={() => setSort("comissao")} active={sortKey === "comissao"} dir={sortDir} num>Comissão</Th>}
@@ -1354,17 +1352,17 @@ function WorkView({
                     <Th onClick={() => setSort("uni")} active={sortKey === "uni"} dir={sortDir} num>Peças</Th>
                     <Th onClick={() => setSort("vendasCom")} active={sortKey === "vendasCom"} dir={sortDir} num>Cad.</Th>
                     <Th onClick={() => setSort("consentimentos")} active={sortKey === "consentimentos"} dir={sortDir} num>Cons.</Th>
-                    <th className="px-3 py-2 text-right">Rank</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.map((v) => (
-                    <tr key={v.nome} className="cursor-pointer border-t border-border hover:bg-muted/30" onClick={() => setDetail(v)}>
-                      <td className="px-3 py-2 font-medium">{v.nome}</td>
-                      {canFinance && <td className="px-3 py-2 text-right">{BRL(v.liquido)}</td>}
-                      {canFinance && <td className="px-3 py-2 text-right">{BRL(v.comissao)}</td>}
+                  {paged.map((v, rowIndex) => (
+                    <tr key={v.nome} className={`cursor-pointer border-t border-border transition hover:bg-brand/5 ${rowIndex % 2 === 1 ? "bg-muted/20" : ""}`} onClick={() => setDetail(v)}>
+                      <td className="px-3 py-3 text-right font-extrabold text-brand">#{rankPos.get(v.nome)}</td>
+                      <td className="min-w-[220px] px-3 py-3 font-semibold">{v.nome}</td>
+                      {canFinance && <td className="min-w-[130px] px-3 py-3 text-right tabular-nums">{BRL(v.liquido)}</td>}
+                      {canFinance && <td className="min-w-[130px] px-3 py-3 text-right tabular-nums">{BRL(v.comissao)}</td>}
                       {canFinance && (
-                        <td className="px-3 py-2 text-right">
+                        <td className="min-w-[120px] px-3 py-3 text-right">
                           {premio.valor > 0 ? (
                             <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${premio.nivel === "hiper" ? "bg-fuchsia-100 text-fuchsia-700" : premio.nivel === "super" ? "bg-indigo-100 text-indigo-700" : "bg-emerald-100 text-emerald-700"}`}>
                               {premio.nivel === "hiper" ? "Hiper Meta" : premio.nivel === "super" ? "Super Meta" : "Meta"}
@@ -1372,19 +1370,18 @@ function WorkView({
                           ) : <span className="text-muted-foreground">—</span>}
                         </td>
                       )}
-                      {canFinance && <td className={`px-3 py-2 text-right ${premio.valor > 0 ? "font-semibold text-emerald-700" : "text-muted-foreground"}`}>{premio.valor > 0 ? `+ ${BRL(premio.valor)}` : "—"}</td>}
-                      {canFinance && <td className="px-3 py-2 text-right font-bold text-brand">{BRL(comissaoFinalDe(v))}</td>}
-                      <td className="px-3 py-2 text-right">{BRL(v.tm)}</td>
-                      <td className="px-3 py-2 text-right">{NUM(v.pa)}</td>
-                      <td className="px-3 py-2 text-right">{INT(v.vendas)}</td>
-                      <td className="px-3 py-2 text-right">{INT(v.uni)}</td>
-                      <td className="px-3 py-2 text-right">{INT(v.vendasCom)}</td>
-                      <td className="px-3 py-2 text-right">{INT(v.consentimentos)}</td>
-                      <td className="px-3 py-2 text-right font-semibold">#{rankPos.get(v.nome)}</td>
+                      {canFinance && <td className={`min-w-[120px] px-3 py-3 text-right tabular-nums ${premio.valor > 0 ? "font-semibold text-emerald-700" : "text-muted-foreground"}`}>{premio.valor > 0 ? `+ ${BRL(premio.valor)}` : "—"}</td>}
+                      {canFinance && <td className="min-w-[140px] px-3 py-3 text-right font-extrabold tabular-nums text-brand">{BRL(comissaoFinalDe(v))}</td>}
+                      <td className="min-w-[100px] px-3 py-3 text-right tabular-nums">{BRL(v.tm)}</td>
+                      <td className="min-w-[80px] px-3 py-3 text-right tabular-nums">{NUM(v.pa)}</td>
+                      <td className="min-w-[80px] px-3 py-3 text-right tabular-nums">{INT(v.vendas)}</td>
+                      <td className="min-w-[80px] px-3 py-3 text-right tabular-nums">{INT(v.uni)}</td>
+                      <td className="min-w-[80px] px-3 py-3 text-right tabular-nums">{INT(v.vendasCom)}</td>
+                      <td className="min-w-[80px] px-3 py-3 text-right tabular-nums">{INT(v.consentimentos)}</td>
                     </tr>
                   ))}
                   {paged.length === 0 && (
-                    <tr><td colSpan={13} className="px-3 py-6 text-center text-muted-foreground">Nenhum resultado</td></tr>
+                    <tr><td colSpan={canFinance ? 13 : 8} className="px-3 py-6 text-center text-muted-foreground">Nenhum resultado</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1404,7 +1401,7 @@ function WorkView({
 
       {/* Detail dialog */}
       {detail && (
-        <DetailDialog
+        <DetailDrawer
           v={detail}
           canFinance={canFinance}
           rank={rankPos.get(detail.nome) ?? 0}
@@ -1420,6 +1417,15 @@ function WorkView({
         <MetasDialog current={metas} onSave={saveMetas} onClose={() => setShowSettings(false)} saving={saving} />
       )}
     </div>
+  );
+}
+
+function KpiGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-border bg-card p-4">
+      <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">{title}</h4>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">{children}</div>
+    </section>
   );
 }
 
@@ -1440,38 +1446,66 @@ function Th({ children, onClick, active, dir, num }: { children: React.ReactNode
   );
 }
 
-function DetailDialog({ v, canFinance, rank, premio, rate, comissaoFinal, onClose }: {
+function DetailDrawer({ v, canFinance, rank, premio, rate, comissaoFinal, onClose }: {
   v: Vendedora; canFinance: boolean; rank: number;
   premio: PremioInfo; rate: number; comissaoFinal: number;
   onClose: () => void;
 }) {
+  const conversion = v.vendas > 0 ? (v.vendasCom / v.vendas) * 100 : 0;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-start justify-between">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onClick={onClose}>
+      <aside className="h-full w-full max-w-xl overflow-y-auto bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-xl font-bold">{v.nome}</h3>
-            <p className="text-sm text-muted-foreground">Posição #{rank}</p>
+            <div className="mb-2 inline-flex rounded-full bg-brand/10 px-3 py-1 text-xs font-extrabold text-brand">Ranking #{rank}</div>
+            <h3 className="text-2xl font-extrabold text-foreground">{v.nome}</h3>
+            <p className="text-sm text-muted-foreground">Detalhe da funcionária na competência selecionada</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 hover:bg-muted"><X size={18} /></button>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {canFinance && <Field label="Venda Bruta" value={BRL(v.bruto)} />}
-          {canFinance && <Field label="Venda Líquida" value={BRL(v.liquido)} highlight />}
-          {canFinance && <Field label={`Comissão (${rate.toFixed(1)}%)`} value={BRL(v.comissao)} />}
-          <Field label="Nº Vendas" value={INT(v.vendas)} />
-          <Field label="Peças" value={INT(v.uni)} />
-          <Field label="Ticket Médio" value={BRL(v.tm)} />
-          <Field label="PA" value={NUM(v.pa)} />
-          <Field label="Preço Médio" value={BRL(v.pm)} />
-          {canFinance && <Field label="Desconto %" value={PCT(v.descPct)} />}
-          {canFinance && <Field label="Desconto Total" value={BRL(v.desconto)} />}
-          <Field label="Cadastros" value={INT(v.vendasCom)} />
-          <Field label="Consentimentos" value={INT(v.consentimentos)} />
-        </div>
+
         {canFinance && (
-          <div className="mt-4 rounded-xl border border-border bg-muted/30 p-4">
-            <div className="mb-2 text-sm font-bold uppercase text-muted-foreground">Composição do Pagamento</div>
+          <div className="mb-5 rounded-2xl border border-brand bg-brand/5 p-5">
+            <div className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Comissão Final</div>
+            <div className="mt-1 text-3xl font-extrabold text-brand">{BRL(comissaoFinal)}</div>
+            <div className="mt-1 text-sm text-muted-foreground">Venda líquida {BRL(v.liquido)}</div>
+          </div>
+        )}
+
+        <div className="space-y-5">
+          {canFinance && (
+            <section>
+              <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">Financeiro</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Venda Líquida" value={BRL(v.liquido)} highlight />
+                <Field label="Comissão Base" value={BRL(v.comissao)} />
+                <Field label="Meta atingida" value={premio.valor > 0 ? premio.motivo : "Nenhuma"} />
+                <Field label="Premiação" value={premio.valor > 0 ? BRL(premio.valor) : BRL(0)} />
+                <Field label="Venda Bruta" value={BRL(v.bruto)} />
+                <Field label="Desconto Total" value={BRL(v.desconto)} />
+                <Field label="Desconto %" value={PCT(v.descPct)} />
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">Performance</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="TM" value={BRL(v.tm)} />
+              <Field label="PA" value={NUM(v.pa)} />
+              <Field label="PM" value={BRL(v.pm)} />
+              <Field label="Vendas" value={INT(v.vendas)} />
+              <Field label="Peças" value={INT(v.uni)} />
+              <Field label="Cadastros" value={INT(v.vendasCom)} />
+              <Field label="Conversões" value={PCT(conversion)} />
+              <Field label="Consentimentos" value={INT(v.consentimentos)} />
+            </div>
+          </section>
+        </div>
+
+        {canFinance && (
+          <div className="mt-5 rounded-xl border border-border bg-muted/30 p-4">
+            <div className="mb-2 text-sm font-extrabold uppercase text-muted-foreground">Composição do Pagamento</div>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between"><span>Comissão base ({rate.toFixed(1)}% sobre líquido)</span><span className="font-semibold">{BRL(v.comissao)}</span></div>
               <div className="flex justify-between">
@@ -1487,7 +1521,7 @@ function DetailDialog({ v, canFinance, rank, premio, rate, comissaoFinal, onClos
             </div>
           </div>
         )}
-      </div>
+      </aside>
     </div>
   );
 }
