@@ -34,7 +34,6 @@ import {
   ShieldCheck,
   ShieldOff,
   Unlock,
-  Monitor,
   Copy,
   Check,
 } from "lucide-react";
@@ -2014,13 +2013,24 @@ function AvatarBadge({ name }: { name: string }) {
 function StatusBadge({ active }: { active: boolean }) {
   return active ? (
     <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success">
-      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ativo
+      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Ativa
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> Inativo
+      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> Desativada
     </span>
   );
+}
+
+function formatLastAccess(iso: string | null): string {
+  if (!iso) return "Nunca acessou";
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function SortHeader({
@@ -2070,6 +2080,7 @@ function UsersTab() {
   const [editRole, setEditRole] = useState<AdminRole>("admin");
   const [editRequireChange, setEditRequireChange] = useState(true);
   const [show2faSetup, setShow2faSetup] = useState(false);
+  const [reconfigure2fa, setReconfigure2fa] = useState(false);
 
   const actor = getAdminActor();
   const requestIdRef = useRef(0);
@@ -2157,6 +2168,19 @@ function UsersTab() {
     toast.success("Usuário desbloqueado");
     setEditing((prev) => (prev && prev.id === u.id ? { ...prev, locked_until: null } : prev));
     load();
+  };
+
+  const openTwoFactorSetup = (isReconfigure: boolean) => {
+    if (
+      isReconfigure &&
+      !confirm(
+        "Isso gera uma nova chave e novos códigos de recuperação — o aplicativo autenticador atual vai parar de funcionar até você escanear o novo QR Code. Continuar?",
+      )
+    ) {
+      return;
+    }
+    setReconfigure2fa(isReconfigure);
+    setShow2faSetup(true);
   };
 
   const disableOwnTwoFactor = async () => {
@@ -2260,61 +2284,75 @@ function UsersTab() {
               </select>
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-semibold">Senha</label>
-              <div className="mb-2 flex gap-4 text-sm">
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    checked={newPasswordMode === "temporaria"}
-                    onChange={() => { setNewPasswordMode("temporaria"); setNewRequireChange(true); setNewPass(""); }}
-                  />
-                  Gerar senha temporária automaticamente
+              <label className="mb-2 block text-sm font-semibold">Tipo da nova senha</label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label
+                  className={`flex cursor-pointer flex-col gap-1 rounded-xl border-2 p-3 transition ${
+                    newPasswordMode === "definitiva" ? "border-brand bg-brand/5" : "border-border"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <input
+                      type="radio"
+                      checked={newPasswordMode === "definitiva"}
+                      onChange={() => { setNewPasswordMode("definitiva"); setNewRequireChange(false); setNewPass(""); }}
+                    />
+                    Definitiva
+                  </span>
+                  <span className="text-xs text-muted-foreground">O usuário continuará utilizando esta senha.</span>
                 </label>
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    checked={newPasswordMode === "definitiva"}
-                    onChange={() => { setNewPasswordMode("definitiva"); setNewRequireChange(false); setNewPass(""); }}
-                  />
-                  Definir senha definitiva
+                <label
+                  className={`flex cursor-pointer flex-col gap-1 rounded-xl border-2 p-3 transition ${
+                    newPasswordMode === "temporaria" ? "border-brand bg-brand/5" : "border-border"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <input
+                      type="radio"
+                      checked={newPasswordMode === "temporaria"}
+                      onChange={() => { setNewPasswordMode("temporaria"); setNewRequireChange(true); setNewPass(""); }}
+                    />
+                    Temporária
+                  </span>
+                  <span className="text-xs text-muted-foreground">O usuário será obrigado a criar uma nova senha no próximo acesso.</span>
                 </label>
               </div>
-              {newPasswordMode === "temporaria" ? (
-                <div className="flex gap-2">
-                  <input
-                    readOnly
-                    value={newPass}
-                    placeholder="clique em gerar"
-                    className="w-full rounded-xl border-2 border-border bg-muted px-4 py-2.5 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setNewPass(generateTempPassword())}
-                    className="shrink-0 rounded-xl border-2 border-border px-4 py-2.5 font-semibold hover:bg-muted"
-                  >
-                    Gerar
-                  </button>
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={newPass}
-                  onChange={(e) => setNewPass(e.target.value)}
-                  placeholder="mínimo 4 caracteres"
-                  className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
-                />
+
+              {newPasswordMode === "temporaria" && (
+                <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+                  <Lock size={12} /> A troca de senha no primeiro acesso será habilitada automaticamente.
+                </p>
               )}
+
+              <div className="mt-3">
+                {newPasswordMode === "temporaria" ? (
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={newPass}
+                      placeholder="clique em gerar"
+                      className="w-full rounded-xl border-2 border-border bg-muted px-4 py-2.5 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewPass(generateTempPassword())}
+                      className="shrink-0 rounded-xl border-2 border-border px-4 py-2.5 font-semibold hover:bg-muted"
+                    >
+                      Gerar
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={newPass}
+                    onChange={(e) => setNewPass(e.target.value)}
+                    placeholder="mínimo 4 caracteres"
+                    className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
+                  />
+                )}
+              </div>
             </div>
           </div>
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={newRequireChange}
-              disabled={newPasswordMode === "temporaria"}
-              onChange={(e) => setNewRequireChange(e.target.checked)}
-            />
-            Exigir troca de senha no primeiro acesso
-          </label>
           <div className="mt-3 flex gap-2">
             <button onClick={create} className="rounded-xl bg-brand px-4 py-2 font-semibold text-brand-foreground">Salvar</button>
             <button
@@ -2384,7 +2422,7 @@ function UsersTab() {
                   <td className="px-4 py-3 text-sm">{ROLE_LABELS[u.role] ?? u.role}</td>
                   <td className="px-4 py-3"><StatusBadge active={u.active} /></td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString("pt-BR") : "Nunca"}
+                    {formatLastAccess(u.last_login_at)}
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">
                     {new Date(u.created_at).toLocaleDateString("pt-BR")}
@@ -2463,14 +2501,8 @@ function UsersTab() {
 
               <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/50 p-3 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
-                  <StatusBadge active={editing.active} />
-                </div>
-                <div>
                   <p className="text-xs text-muted-foreground">Último acesso</p>
-                  <p className="font-medium">
-                    {editing.last_login_at ? new Date(editing.last_login_at).toLocaleString("pt-BR") : "Nunca"}
-                  </p>
+                  <p className="font-medium">{formatLastAccess(editing.last_login_at)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Data de criação</p>
@@ -2479,7 +2511,7 @@ function UsersTab() {
                 <div>
                   <p className="text-xs text-muted-foreground">Senha alterada em</p>
                   <p className="font-medium">
-                    {editing.password_changed_at ? new Date(editing.password_changed_at).toLocaleDateString("pt-BR") : "Nunca"}
+                    {editing.password_changed_at ? new Date(editing.password_changed_at).toLocaleDateString("pt-BR") : "Nunca alterada"}
                   </p>
                 </div>
               </div>
@@ -2488,139 +2520,178 @@ function UsersTab() {
             <div className="mt-5 border-t border-border pt-4">
               <h4 className="mb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Segurança</h4>
 
-              <div className="mb-4">
-                <label className="mb-1 block text-sm font-semibold">Alterar senha</label>
-                <div className="mb-2 flex gap-4 text-sm">
-                  <label className="flex items-center gap-1.5">
-                    <input
-                      type="radio"
-                      checked={editPasswordMode === "temporaria"}
-                      onChange={() => { setEditPasswordMode("temporaria"); setEditRequireChange(true); setEditPass(""); }}
-                    />
-                    Senha temporária
-                  </label>
-                  <label className="flex items-center gap-1.5">
-                    <input
-                      type="radio"
-                      checked={editPasswordMode === "definitiva"}
-                      onChange={() => { setEditPasswordMode("definitiva"); setEditRequireChange(false); setEditPass(""); }}
-                    />
-                    Senha definitiva
-                  </label>
-                </div>
-                {editPasswordMode === "temporaria" ? (
-                  <div className="flex gap-2">
-                    <input
-                      readOnly
-                      value={editPass}
-                      placeholder="deixe em branco para manter a atual"
-                      className="w-full rounded-xl border-2 border-border bg-muted px-4 py-2.5 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setEditPass(generateTempPassword())}
-                      className="shrink-0 rounded-xl border-2 border-border px-4 py-2.5 font-semibold hover:bg-muted"
+              <div className="space-y-3">
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <label className="mb-2 block text-sm font-semibold">Tipo da nova senha</label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label
+                      className={`flex cursor-pointer flex-col gap-1 rounded-xl border-2 p-3 transition ${
+                        editPasswordMode === "definitiva" ? "border-brand bg-brand/5" : "border-border"
+                      }`}
                     >
-                      Gerar
-                    </button>
+                      <span className="flex items-center gap-2 text-sm font-semibold">
+                        <input
+                          type="radio"
+                          checked={editPasswordMode === "definitiva"}
+                          onChange={() => { setEditPasswordMode("definitiva"); setEditRequireChange(false); setEditPass(""); }}
+                        />
+                        Definitiva
+                      </span>
+                      <span className="text-xs text-muted-foreground">O usuário continuará utilizando esta senha.</span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer flex-col gap-1 rounded-xl border-2 p-3 transition ${
+                        editPasswordMode === "temporaria" ? "border-brand bg-brand/5" : "border-border"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 text-sm font-semibold">
+                        <input
+                          type="radio"
+                          checked={editPasswordMode === "temporaria"}
+                          onChange={() => { setEditPasswordMode("temporaria"); setEditRequireChange(true); setEditPass(""); }}
+                        />
+                        Temporária
+                      </span>
+                      <span className="text-xs text-muted-foreground">O usuário será obrigado a criar uma nova senha no próximo acesso.</span>
+                    </label>
                   </div>
-                ) : (
-                  <input
-                    type="text"
-                    value={editPass}
-                    onChange={(e) => setEditPass(e.target.value)}
-                    placeholder="deixe em branco para manter a atual"
-                    className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
-                  />
-                )}
-                {editPass && (
-                  <label className="mt-2 flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={editRequireChange}
-                      disabled={editPasswordMode === "temporaria"}
-                      onChange={(e) => setEditRequireChange(e.target.checked)}
-                    />
-                    Exigir troca de senha no primeiro acesso
-                  </label>
-                )}
-              </div>
 
-              <div className="mb-4 rounded-xl border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    {editing.two_factor_enabled ? (
-                      <ShieldCheck size={16} className="text-success" />
+                  {editPasswordMode === "temporaria" && (
+                    <p className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">
+                      <Lock size={12} /> A troca de senha no próximo acesso será habilitada automaticamente.
+                    </p>
+                  )}
+
+                  <div className="mt-3">
+                    {editPasswordMode === "temporaria" ? (
+                      <div className="flex gap-2">
+                        <input
+                          readOnly
+                          value={editPass}
+                          placeholder="deixe em branco para manter a atual"
+                          className="w-full rounded-xl border-2 border-border bg-muted px-4 py-2.5 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEditPass(generateTempPassword())}
+                          className="shrink-0 rounded-xl border-2 border-border px-4 py-2.5 font-semibold hover:bg-muted"
+                        >
+                          Gerar
+                        </button>
+                      </div>
                     ) : (
-                      <ShieldOff size={16} className="text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={editPass}
+                        onChange={(e) => setEditPass(e.target.value)}
+                        placeholder="deixe em branco para manter a atual"
+                        className="w-full rounded-xl border-2 border-border bg-background px-4 py-2.5"
+                      />
                     )}
-                    Autenticação em duas etapas
                   </div>
-                  <span className={`text-xs font-semibold ${editing.two_factor_enabled ? "text-success" : "text-muted-foreground"}`}>
-                    {editing.two_factor_enabled ? "Habilitada" : "Desabilitada"}
-                  </span>
                 </div>
-                <div className="mt-2">
-                  {actor && editing.email === actor.user ? (
-                    editing.two_factor_enabled ? (
-                      <button
-                        type="button"
-                        onClick={disableOwnTwoFactor}
-                        className="rounded-lg border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
-                      >
-                        Desativar
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setShow2faSetup(true)}
-                        className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted"
-                      >
-                        Configurar
-                      </button>
-                    )
-                  ) : editing.two_factor_enabled ? (
-                    <button
-                      type="button"
-                      onClick={() => forceDisableTwoFactor(editing)}
-                      className="rounded-lg border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                        editing.two_factor_enabled ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                      }`}
                     >
-                      Forçar desativação
-                    </button>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Configurada pelo próprio usuário ao entrar no painel.</p>
+                      {editing.two_factor_enabled ? <ShieldCheck size={18} /> : <ShieldOff size={18} />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h5 className="text-sm font-semibold">Autenticação em duas etapas</h5>
+                      {!editing.two_factor_enabled && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Proteja a conta utilizando um aplicativo autenticador (Google Authenticator, Microsoft
+                          Authenticator, Authy e compatíveis).
+                        </p>
+                      )}
+                      <div className="mt-2 flex items-center gap-1.5 text-sm">
+                        <span className={`h-2 w-2 rounded-full ${editing.two_factor_enabled ? "bg-success" : "bg-muted-foreground/50"}`} />
+                        <span className={`font-semibold ${editing.two_factor_enabled ? "text-success" : "text-muted-foreground"}`}>
+                          {editing.two_factor_enabled ? "Protegida" : "Desabilitada"}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {actor && editing.email === actor.user ? (
+                          editing.two_factor_enabled ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openTwoFactorSetup(true)}
+                                className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted"
+                              >
+                                Gerenciar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={disableOwnTwoFactor}
+                                className="rounded-lg border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                              >
+                                Desativar
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => openTwoFactorSetup(false)}
+                              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground hover:opacity-90"
+                            >
+                              Configurar agora
+                            </button>
+                          )
+                        ) : editing.two_factor_enabled ? (
+                          <button
+                            type="button"
+                            onClick={() => forceDisableTwoFactor(editing)}
+                            className="rounded-lg border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                          >
+                            Forçar desativação
+                          </button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Configurada pelo próprio usuário ao entrar no painel.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <h5 className="text-sm font-semibold">Sessões</h5>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Este recurso será disponibilizado em uma próxima atualização.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">Status da conta</span>
+                    <StatusBadge active={editing.active} />
+                  </div>
+                  {editing.locked_until && new Date(editing.locked_until) > new Date() && (
+                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
+                        <Lock size={12} /> Bloqueada temporariamente — libera às{" "}
+                        {new Date(editing.locked_until).toLocaleString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => unlockUser(editing)}
+                        className="flex shrink-0 items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                      >
+                        <Unlock size={12} /> Desbloquear
+                      </button>
+                    </div>
                   )}
                 </div>
-              </div>
-
-              <div className="mb-4 rounded-xl border border-dashed border-border p-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                  <Monitor size={16} /> Sessões
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Em breve: visualização e encerramento de sessões ativas (estrutura preparada).
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">Status da conta</span>
-                  <StatusBadge active={editing.active} />
-                </div>
-                {editing.locked_until && new Date(editing.locked_until) > new Date() && (
-                  <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2">
-                    <span className="text-xs font-semibold text-destructive">
-                      Bloqueado até {new Date(editing.locked_until).toLocaleTimeString("pt-BR")} (excesso de tentativas de login)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => unlockUser(editing)}
-                      className="flex shrink-0 items-center gap-1 rounded-lg border border-destructive/40 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/10"
-                    >
-                      <Unlock size={12} /> Desbloquear
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -2636,6 +2707,7 @@ function UsersTab() {
 
       {show2faSetup && editing && (
         <TwoFactorSetupModal
+          isReconfigure={reconfigure2fa}
           onClose={() => setShow2faSetup(false)}
           onEnabled={() => {
             setShow2faSetup(false);
@@ -2648,7 +2720,15 @@ function UsersTab() {
   );
 }
 
-function TwoFactorSetupModal({ onClose, onEnabled }: { onClose: () => void; onEnabled: () => void }) {
+function TwoFactorSetupModal({
+  isReconfigure,
+  onClose,
+  onEnabled,
+}: {
+  isReconfigure?: boolean;
+  onClose: () => void;
+  onEnabled: () => void;
+}) {
   const actor = getAdminActor();
   const [step, setStep] = useState<"loading" | "scan" | "codes" | "error">("loading");
   const [otpauthUrl, setOtpauthUrl] = useState("");
@@ -2708,7 +2788,9 @@ function TwoFactorSetupModal({ onClose, onEnabled }: { onClose: () => void; onEn
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={step === "codes" ? undefined : onClose}>
       <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 text-lg font-bold">Configurar autenticação em duas etapas</h3>
+        <h3 className="mb-4 text-lg font-bold">
+          {isReconfigure ? "Reconfigurar autenticação em duas etapas" : "Configurar autenticação em duas etapas"}
+        </h3>
 
         {step === "loading" && (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
@@ -2726,6 +2808,11 @@ function TwoFactorSetupModal({ onClose, onEnabled }: { onClose: () => void; onEn
         {step === "scan" && (
           <div>
             <p className="mb-3 text-sm text-muted-foreground">
+              {isReconfigure && (
+                <span className="mb-1 block font-semibold text-amber-700">
+                  A chave e os códigos de recuperação anteriores deixarão de funcionar assim que a nova configuração for confirmada.
+                </span>
+              )}
               Escaneie o QR Code com o Google Authenticator, Microsoft Authenticator, Authy, Bitwarden ou 1Password.
             </p>
             {qrDataUrl && (
