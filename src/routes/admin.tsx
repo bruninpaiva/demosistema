@@ -36,6 +36,9 @@ import {
   Unlock,
   Copy,
   Check,
+  AlertCircle,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
 import CommissionTab from "@/components/CommissionTab";
@@ -89,6 +92,17 @@ export function getAdminActor(): { user: string; pass: string; role: string; sto
 
 const ALL_STORES = "__all__";
 const ALL_REPS = "__all__";
+
+// Horário operacional considerado pelos alertas do Dashboard (Etapa 4.1).
+// Centralizado aqui de propósito: hoje é um valor único para toda a rede;
+// quando cada loja tiver seu próprio horário cadastrado, é só trocar este
+// valor fixo por uma consulta a essa nova coluna, sem mexer nas regras.
+const OPERATING_HOURS = { start: 9, end: 20 };
+
+function isWithinOperatingHours(date: Date): boolean {
+  const h = date.getHours();
+  return h >= OPERATING_HOURS.start && h < OPERATING_HOURS.end;
+}
 
 function AdminPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -939,6 +953,204 @@ function LiveStrip({ storeId }: { storeId: string }) {
   );
 }
 
+// ------------ Alertas ------------
+// Independentes do filtro de período do Dashboard: um alerta é sobre "agora",
+// não sobre o período que o gestor está navegando — por isso consultam
+// sempre hoje (e ontem, para a regra de queda de conversão), atualizando
+// por polling como o restante do "ao vivo".
+
+type AlertSeverity = "info" | "warning" | "critical";
+type DashboardAlert = { id: string; severity: AlertSeverity; message: string; storeId: string | null };
+type AlertRow = { id: string; created_at: string; store_id: string | null; sales_rep_id: string; type: "sale" | "no_sale" | null; status: "open" | "closed" };
+type AlertBreakRow = { id: string; sales_rep_id: string; store_id: string | null; reason: string | null; started_at: string; ended_at: string | null };
+
+function severityRank(s: AlertSeverity): number {
+  return s === "critical" ? 3 : s === "warning" ? 2 : 1;
+}
+
+function minutesSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / 60000;
+}
+
+const ALERTS_POLL_MS = 60_000;
+
+function useAlerts(stores: Store[], reps: RepOption[]) {
+  const [todayRows, setTodayRows] = useState<AlertRow[]>([]);
+  const [yesterdayRows, setYesterdayRows] = useState<AlertRow[]>([]);
+  const [breakRows, setBreakRows] = useState<AlertBreakRow[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+      const [{ data: today }, { data: yesterday }, { data: breaks }] = await Promise.all([
+        supabase.from("attendances").select("id,created_at,store_id,sales_rep_id,type,status").gte("created_at", todayStart.toISOString()),
+        supabase.from("attendances").select("id,created_at,store_id,sales_rep_id,type,status").gte("created_at", yesterdayStart.toISOString()).lt("created_at", todayStart.toISOString()),
+        supabase.from("rep_breaks").select("id,sales_rep_id,store_id,reason,started_at,ended_at").gte("started_at", todayStart.toISOString()),
+      ]);
+      if (!alive) return;
+      setTodayRows((today as AlertRow[]) ?? []);
+      setYesterdayRows((yesterday as AlertRow[]) ?? []);
+      setBreakRows((breaks as AlertBreakRow[]) ?? []);
+    };
+    load();
+    const interval = setInterval(load, ALERTS_POLL_MS);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
+
+  return useMemo(() => {
+    const alerts: DashboardAlert[] = [];
+    const now = new Date();
+    const nowWithinHours = isWithinOperatingHours(now);
+    const storeName = (id: string | null) => stores.find((s) => s.id === id)?.name ?? "Loja";
+    const repName = (id: string) => reps.find((r) => r.id === id)?.name ?? "Vendedora";
+
+    const storeIds = Array.from(
+      new Set([...todayRows.map((r) => r.store_id), ...breakRows.map((b) => b.store_id)].filter((x): x is string => Boolean(x))),
+    );
+
+    const convByStore = new Map<string, { conv: number; n: number }>();
+
+    for (const sid of storeIds) {
+      const storeToday = todayRows.filter((r) => r.store_id === sid);
+      const closedToday = storeToday.filter((r) => r.status === "closed");
+      const salesToday = closedToday.filter((r) => r.type === "sale");
+      const closedYesterday = yesterdayRows.filter((r) => r.store_id === sid && r.status === "closed");
+      const salesYesterday = closedYesterday.filter((r) => r.type === "sale");
+
+      if (closedToday.length > 0) convByStore.set(sid, { conv: (salesToday.length / closedToday.length) * 100, n: closedToday.length });
+
+      // Regra: conversão caiu (mínimo de amostra pra não alertar por 1 ou 2 atendimentos)
+      if (closedToday.length >= 5 && closedYesterday.length >= 5) {
+        const convToday = (salesToday.length / closedToday.length) * 100;
+        const convYesterday = (salesYesterday.length / closedYesterday.length) * 100;
+        const drop = convYesterday - convToday;
+        if (drop >= 10) {
+          alerts.push({
+            id: `conv-${sid}`,
+            severity: "warning",
+            message: `${storeName(sid)}: conversão caiu ${drop.toFixed(0)} pontos percentuais hoje em relação a ontem.`,
+            storeId: sid,
+          });
+        }
+      }
+
+      // Regra: fila aumentando (atendimentos em aberto há mais de 15 min)
+      const stuckInQueue = storeToday.filter((r) => r.status === "open" && minutesSince(r.created_at) >= 15);
+      if (stuckInQueue.length > 5) {
+        alerts.push({
+          id: `fila-${sid}`,
+          severity: "warning",
+          message: `${storeName(sid)}: ${stuckInQueue.length} atendimentos em espera há mais de 15 minutos.`,
+          storeId: sid,
+        });
+      }
+
+      // Regra: nenhuma venda há muito tempo (só durante o horário operacional)
+      if (nowWithinHours && storeToday.length > 0) {
+        const lastSale = [...salesToday].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        const minsSinceSale = lastSale ? minutesSince(lastSale.created_at) : null;
+        if (minsSinceSale === null || minsSinceSale >= 60) {
+          alerts.push({
+            id: `semvenda-${sid}`,
+            severity: "critical",
+            message: `${storeName(sid)}: nenhuma venda há mais de 1 hora.`,
+            storeId: sid,
+          });
+        }
+      }
+
+      // Regra: loja sem movimento algum (só durante o horário operacional)
+      if (nowWithinHours) {
+        const lastActivity = [...storeToday].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        const minsSinceActivity = lastActivity ? minutesSince(lastActivity.created_at) : null;
+        if (minsSinceActivity === null || minsSinceActivity >= 90) {
+          alerts.push({
+            id: `semmov-${sid}`,
+            severity: "critical",
+            message: `${storeName(sid)}: sem nenhum atendimento registrado há mais de 1h30.`,
+            storeId: sid,
+          });
+        }
+      }
+
+      // Regra: pausas acima do normal (soma de minutos em pausa hoje, na loja toda)
+      const storeBreaksToday = breakRows.filter((b) => b.store_id === sid && b.reason !== "Fora horário de trabalho");
+      const totalPauseMin = storeBreaksToday.reduce((sum, b) => {
+        const endMs = b.ended_at ? new Date(b.ended_at).getTime() : Date.now();
+        return sum + (endMs - new Date(b.started_at).getTime()) / 60000;
+      }, 0);
+      if (totalPauseMin > 180) {
+        alerts.push({
+          id: `pausa-${sid}`,
+          severity: "info",
+          message: `${storeName(sid)}: ${Math.round(totalPauseMin)} minutos de pausa acumulados hoje.`,
+          storeId: sid,
+        });
+      }
+    }
+
+    // Regra: loja destoante das demais (só faz sentido com 2+ lojas com amostra mínima)
+    const comparable = Array.from(convByStore.entries()).filter(([, v]) => v.n >= 5);
+    if (comparable.length >= 2) {
+      for (const [sid, v] of comparable) {
+        const others = comparable.filter(([osid]) => osid !== sid);
+        const avgOthers = others.reduce((sum, [, o]) => sum + o.conv, 0) / others.length;
+        if (avgOthers > 0 && v.conv < avgOthers / 2) {
+          alerts.push({
+            id: `destoante-${sid}`,
+            severity: "info",
+            message: `${storeName(sid)}: conversão bem abaixo da média das outras lojas hoje (${v.conv.toFixed(0)}% vs. ${avgOthers.toFixed(0)}%).`,
+            storeId: sid,
+          });
+        }
+      }
+    }
+
+    // Regra: vendedora zerada há muito tempo (em atendimento há 2h+ sem nenhuma venda)
+    const repIdsToday = Array.from(new Set(todayRows.map((r) => r.sales_rep_id)));
+    for (const rid of repIdsToday) {
+      const rows = todayRows.filter((r) => r.sales_rep_id === rid && r.status === "closed");
+      if (rows.length === 0) continue;
+      const sales = rows.filter((r) => r.type === "sale");
+      if (sales.length > 0) continue;
+      const firstRow = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+      const hoursSinceFirst = minutesSince(firstRow.created_at) / 60;
+      if (hoursSinceFirst >= 2) {
+        alerts.push({
+          id: `zerada-${rid}`,
+          severity: "info",
+          message: `${repName(rid)} está há mais de 2h sem nenhuma venda hoje (${rows.length} atendimento${rows.length > 1 ? "s" : ""}).`,
+          storeId: rows[0].store_id,
+        });
+      }
+    }
+
+    return alerts.sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+  }, [todayRows, yesterdayRows, breakRows, stores, reps]);
+}
+
+function AlertBanner({ alert }: { alert: DashboardAlert }) {
+  const styles =
+    alert.severity === "critical"
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
+      : alert.severity === "warning"
+        ? "border-amber-400/50 bg-amber-50 text-amber-800"
+        : "border-border bg-muted text-foreground";
+  const Icon = alert.severity === "critical" ? AlertCircle : alert.severity === "warning" ? AlertTriangle : Info;
+  const label = alert.severity === "critical" ? "Crítico" : alert.severity === "warning" ? "Atenção" : "Informativo";
+  return (
+    <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${styles}`}>
+      <Icon size={16} className="mt-0.5 shrink-0" />
+      <p><span className="font-bold">{label}:</span> {alert.message}</p>
+    </div>
+  );
+}
+
 type DashboardMetrics = {
   atendimentos: number;
   vendas: number;
@@ -1096,6 +1308,12 @@ function Dashboard() {
 
   const metrics = useDashboardMetrics(filteredData);
   const previousMetrics = useDashboardMetrics(filteredPreviousData);
+
+  const allAlerts = useAlerts(stores, reps);
+  const visibleAlerts = useMemo(
+    () => (storeId === ALL_STORES ? allAlerts : allAlerts.filter((a) => a.storeId === storeId || a.storeId === null)),
+    [allAlerts, storeId],
+  );
 
   const ranking = useMemo(() => {
     const map = new Map<string, { atendimentos: number; vendas: number }>();
@@ -1255,6 +1473,14 @@ function Dashboard() {
           Comparar com período anterior
         </label>
       </div>
+
+      {visibleAlerts.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {visibleAlerts.map((a) => (
+            <AlertBanner key={a.id} alert={a} />
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi
