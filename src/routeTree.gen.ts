@@ -14,6 +14,8 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as AdminEsqueciSenhaRouteImport } from './routes/admin_.esqueci-senha'
+import { Route as AdminRedefinirSenhaRouteImport } from './routes/admin_.redefinir-senha'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as LojaStoreIdIndexRouteImport } from './routes/loja.$storeId.index'
 import { Route as LojaStoreIdVendedoraRepIdIndexRouteImport } from './routes/loja.$storeId.vendedora.$repId.index'
@@ -46,6 +48,16 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AdminEsqueciSenhaRoute = AdminEsqueciSenhaRouteImport.update({
+  id: '/admin_/esqueci-senha',
+  path: '/admin/esqueci-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRedefinirSenhaRoute = AdminRedefinirSenhaRouteImport.update({
+  id: '/admin_/redefinir-senha',
+  path: '/admin/redefinir-senha',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Char91DotmcpChar93InvokeToolToolRoute =
   Char91DotmcpChar93InvokeToolToolRouteImport.update({
     id: '/.mcp/invoke-tool/$tool',
@@ -76,6 +88,8 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/esqueci-senha': typeof AdminEsqueciSenhaRoute
+  '/admin/redefinir-senha': typeof AdminRedefinirSenhaRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/loja/$storeId/': typeof LojaStoreIdIndexRoute
   '/loja/$storeId/vendedora/$repId/nao-vendeu': typeof LojaStoreIdVendedoraRepIdNaoVendeuRoute
@@ -87,6 +101,8 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/esqueci-senha': typeof AdminEsqueciSenhaRoute
+  '/admin/redefinir-senha': typeof AdminRedefinirSenhaRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/loja/$storeId': typeof LojaStoreIdIndexRoute
   '/loja/$storeId/vendedora/$repId/nao-vendeu': typeof LojaStoreIdVendedoraRepIdNaoVendeuRoute
@@ -99,6 +115,8 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin_/esqueci-senha': typeof AdminEsqueciSenhaRoute
+  '/admin_/redefinir-senha': typeof AdminRedefinirSenhaRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/loja/$storeId/': typeof LojaStoreIdIndexRoute
   '/loja/$storeId/vendedora/$repId/nao-vendeu': typeof LojaStoreIdVendedoraRepIdNaoVendeuRoute
@@ -112,6 +130,8 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/esqueci-senha'
+    | '/admin/redefinir-senha'
     | '/.mcp/invoke-tool/$tool'
     | '/loja/$storeId/'
     | '/loja/$storeId/vendedora/$repId/nao-vendeu'
@@ -123,6 +143,8 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/esqueci-senha'
+    | '/admin/redefinir-senha'
     | '/.mcp/invoke-tool/$tool'
     | '/loja/$storeId'
     | '/loja/$storeId/vendedora/$repId/nao-vendeu'
@@ -134,6 +156,8 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin_/esqueci-senha'
+    | '/admin_/redefinir-senha'
     | '/.mcp/invoke-tool/$tool'
     | '/loja/$storeId/'
     | '/loja/$storeId/vendedora/$repId/nao-vendeu'
@@ -146,6 +170,8 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  AdminEsqueciSenhaRoute: typeof AdminEsqueciSenhaRoute
+  AdminRedefinirSenhaRoute: typeof AdminRedefinirSenhaRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   LojaStoreIdIndexRoute: typeof LojaStoreIdIndexRoute
   LojaStoreIdVendedoraRepIdNaoVendeuRoute: typeof LojaStoreIdVendedoraRepIdNaoVendeuRoute
@@ -189,6 +215,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/esqueci-senha': {
+      id: '/admin_/esqueci-senha'
+      path: '/admin/esqueci-senha'
+      fullPath: '/admin/esqueci-senha'
+      preLoaderRoute: typeof AdminEsqueciSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/redefinir-senha': {
+      id: '/admin_/redefinir-senha'
+      path: '/admin/redefinir-senha'
+      fullPath: '/admin/redefinir-senha'
+      preLoaderRoute: typeof AdminRedefinirSenhaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/.mcp/invoke-tool/$tool': {
       id: '/.mcp/invoke-tool/$tool'
       path: '/.mcp/invoke-tool/$tool'
@@ -227,6 +267,8 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  AdminEsqueciSenhaRoute: AdminEsqueciSenhaRoute,
+  AdminRedefinirSenhaRoute: AdminRedefinirSenhaRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   LojaStoreIdIndexRoute: LojaStoreIdIndexRoute,
   LojaStoreIdVendedoraRepIdNaoVendeuRoute:

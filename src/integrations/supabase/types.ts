@@ -19,39 +19,63 @@ export type Database = {
           active: boolean
           created_at: string
           email: string
+          failed_login_attempts: number
           id: string
           last_login_at: string | null
+          locked_until: string | null
           must_change_password: boolean
           name: string
+          password_changed_at: string | null
           password_hash: string
+          password_reset_expires_at: string | null
+          password_reset_token: string | null
+          recovery_codes: Json
           role: Database["public"]["Enums"]["admin_role"]
           store_id: string | null
+          two_factor_enabled: boolean
+          two_factor_secret: string | null
           updated_at: string
         }
         Insert: {
           active?: boolean
           created_at?: string
           email: string
+          failed_login_attempts?: number
           id?: string
           last_login_at?: string | null
+          locked_until?: string | null
           must_change_password?: boolean
           name: string
+          password_changed_at?: string | null
           password_hash: string
+          password_reset_expires_at?: string | null
+          password_reset_token?: string | null
+          recovery_codes?: Json
           role?: Database["public"]["Enums"]["admin_role"]
           store_id?: string | null
+          two_factor_enabled?: boolean
+          two_factor_secret?: string | null
           updated_at?: string
         }
         Update: {
           active?: boolean
           created_at?: string
           email?: string
+          failed_login_attempts?: number
           id?: string
           last_login_at?: string | null
+          locked_until?: string | null
           must_change_password?: boolean
           name?: string
+          password_changed_at?: string | null
           password_hash?: string
+          password_reset_expires_at?: string | null
+          password_reset_token?: string | null
+          recovery_codes?: Json
           role?: Database["public"]["Enums"]["admin_role"]
           store_id?: string | null
+          two_factor_enabled?: boolean
+          two_factor_secret?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -457,6 +481,36 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_2fa_disable: {
+        Args: { _actor: string; _actor_password: string }
+        Returns: undefined
+      }
+      admin_2fa_setup_init: {
+        Args: { _actor: string; _actor_password: string }
+        Returns: { otpauth_url: string; secret: string }[]
+      }
+      admin_2fa_setup_verify: {
+        Args: { _actor: string; _actor_password: string; _code: string }
+        Returns: string[]
+      }
+      admin_authenticate: {
+        Args: { _code?: string; _email: string; _password: string }
+        Returns: {
+          email: string | null
+          id: string | null
+          locked_seconds: number | null
+          must_change_password: boolean | null
+          name: string | null
+          role: Database["public"]["Enums"]["admin_role"] | null
+          status: string
+          store_id: string | null
+          two_factor_enabled: boolean | null
+        }[]
+      }
+      admin_force_disable_2fa: {
+        Args: { _actor: string; _actor_password: string; _target_id: string }
+        Returns: undefined
+      }
       admin_bootstrap: {
         Args: { _email: string; _name: string; _password: string }
         Returns: string
@@ -464,6 +518,14 @@ export type Database = {
       admin_change_own_password: {
         Args: { _current_password: string; _email: string; _new_password: string }
         Returns: undefined
+      }
+      admin_request_password_reset: {
+        Args: { _email: string }
+        Returns: string
+      }
+      admin_reset_password: {
+        Args: { _new_password: string; _token: string }
+        Returns: boolean
       }
       admin_create: {
         Args: {
@@ -494,12 +556,19 @@ export type Database = {
           email: string
           id: string
           last_login_at: string | null
+          locked_until: string | null
           must_change_password: boolean
           name: string
+          password_changed_at: string | null
           role: Database["public"]["Enums"]["admin_role"]
           store_id: string
+          two_factor_enabled: boolean
           updated_at: string
         }[]
+      }
+      admin_unlock: {
+        Args: { _actor: string; _actor_password: string; _target_id: string }
+        Returns: undefined
       }
       admin_record_login: {
         Args: { _email: string; _password: string }
