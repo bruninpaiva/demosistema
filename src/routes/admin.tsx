@@ -1963,6 +1963,68 @@ function StoreCard({
   );
 }
 
+function EmptyStoreSection({ title, description }: { title: string; description: string }) {
+  return (
+    <section className="rounded-2xl border border-dashed border-border bg-card p-6">
+      <h4 className="text-base font-bold text-foreground">{title}</h4>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    </section>
+  );
+}
+
+function StoreManagementCenter({ store, onBack }: { store: Store; onBack: () => void }) {
+  return (
+    <div className="space-y-5">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft size={16} /> Voltar para Lojas
+      </button>
+
+      <header className="rounded-2xl bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+              <StoreIcon size={24} />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-foreground">{store.name}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Centro de Gestão da Loja</p>
+            </div>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-sm font-bold ${
+              store.active ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {store.active ? "Ativa" : "Inativa"}
+          </span>
+        </div>
+      </header>
+
+      <EmptyStoreSection title="Alertas" description="Em breve, mostra os alertas operacionais específicos desta loja." />
+      <EmptyStoreSection
+        title="Status em tempo real"
+        description="Em breve, acompanha fila, atendimentos em andamento e pausas da equipe."
+      />
+      <EmptyStoreSection
+        title="Indicadores"
+        description="Em breve, resume atendimentos, conversão e métricas do período selecionado."
+      />
+      <EmptyStoreSection title="Equipe" description="Em breve, lista vendedoras ativas da loja com status e desempenho." />
+      <EmptyStoreSection
+        title="Histórico recente"
+        description="Em breve, exibe os últimos atendimentos e eventos relevantes da loja."
+      />
+      <EmptyStoreSection
+        title="Configurações da loja"
+        description="Em breve, concentra os dados simples da loja que podem ser editados aqui."
+      />
+    </div>
+  );
+}
+
 function StoresTab() {
   const { stores, reload } = useStores();
   const [name, setName] = useState("");
@@ -2023,21 +2085,7 @@ function StoresTab() {
   const selectedStore = stores.find((s) => s.id === selectedStoreId) ?? null;
 
   if (selectedStore) {
-    return (
-      <div>
-        <button
-          onClick={() => setSelectedStoreId(null)}
-          className="mb-4 flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft size={16} /> Voltar para Lojas
-        </button>
-        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-muted-foreground">
-          <StoreIcon className="mx-auto mb-3" size={32} />
-          <p className="text-lg font-semibold text-foreground">{selectedStore.name}</p>
-          <p className="mt-1">Centro de Gestão em construção — chega nos próximos commits.</p>
-        </div>
-      </div>
-    );
+    return <StoreManagementCenter store={selectedStore} onBack={() => setSelectedStoreId(null)} />;
   }
 
   return (
