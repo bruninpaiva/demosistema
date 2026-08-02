@@ -158,6 +158,8 @@ type LoadedComp = {
   vendedoras: Vendedora[];
 };
 
+type AdminRole = "admin" | "gerente" | "super_admin";
+
 /* ============================================================
    File parser
    ============================================================ */
@@ -274,7 +276,7 @@ function parseBRLInput(formatted: string): number {
    Main component
    ============================================================ */
 export default function CommissionTab({ autoOpenImportId }: { autoOpenImportId?: string } = {}) {
-  const [actorRole, setActorRole] = useState<"admin" | "gerente" | null>(null);
+  const [actorRole, setActorRole] = useState<AdminRole | null>(null);
   const [actorStoreId, setActorStoreId] = useState<string | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [history, setHistory] = useState<Comp[]>([]);
@@ -292,7 +294,7 @@ export default function CommissionTab({ autoOpenImportId }: { autoOpenImportId?:
       const { data } = await supabase.rpc("verify_admin_user" as never, {
         _email: actor.user, _password: actor.pass,
       } as never);
-      const arr = (data as unknown as { role: "admin" | "gerente"; store_id: string | null }[]) || [];
+      const arr = (data as unknown as { role: AdminRole; store_id: string | null }[]) || [];
       if (arr[0]) {
         setActorRole(arr[0].role);
         setActorStoreId(arr[0].store_id);
@@ -390,7 +392,8 @@ export default function CommissionTab({ autoOpenImportId }: { autoOpenImportId?:
   if (!actor) return <div className="p-8 text-muted-foreground">Faça login para acessar Comissão.</div>;
   if (actorRole === null) return <div className="p-8 text-muted-foreground">Carregando…</div>;
 
-  const visibleStores = actorRole === "admin" ? stores : stores.filter((s) => s.id === actorStoreId);
+  const isGlobalAdmin = actorRole === "admin" || actorRole === "super_admin";
+  const visibleStores = isGlobalAdmin ? stores : stores.filter((s) => s.id === actorStoreId);
 
   if (loaded) {
     return (
@@ -425,7 +428,7 @@ export default function CommissionTab({ autoOpenImportId }: { autoOpenImportId?:
       stores={visibleStores}
       onNew={() => setShowNewForm(true)}
       onOpen={openComp}
-      onDelete={actorRole === "admin" ? deleteComp : undefined}
+      onDelete={isGlobalAdmin ? deleteComp : undefined}
       busy={busy}
       actorRole={actorRole}
     />
@@ -444,7 +447,7 @@ function SelectorView({
   onOpen: (id: string) => void;
   onDelete?: (id: string) => void;
   busy: boolean;
-  actorRole: "admin" | "gerente";
+  actorRole: AdminRole;
 }) {
   const [storeFilter, setStoreFilter] = useState<string>("");
   const [yearFilter, setYearFilter] = useState<string>("");
@@ -708,13 +711,13 @@ function WorkView({
   loaded: LoadedComp;
   setLoaded: (l: LoadedComp) => void;
   actor: { user: string; pass: string };
-  actorRole: "admin" | "gerente";
+  actorRole: AdminRole;
   onBack: () => void;
   onReload: (id: string) => void;
 }) {
   const { info, metas, vendedoras } = loaded;
   const isClosed = !!info.closed_at;
-  const canFinance = actorRole === "admin";
+  const canFinance = actorRole === "admin" || actorRole === "super_admin";
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [search, setSearch] = useState("");
@@ -1170,7 +1173,7 @@ function WorkView({
               </button>
             </>
           )}
-          {actorRole === "admin" && (
+          {canFinance && (
             isClosed ? (
               <button onClick={reopenComp} className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 font-semibold text-amber-700 hover:bg-amber-100">
                 <Unlock size={18} /> Reabrir
