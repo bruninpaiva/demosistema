@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as AdminExecutiveRouteImport } from './routes/admin.executive'
 import { Route as AdminEsqueciSenhaRouteImport } from './routes/admin_.esqueci-senha'
 import { Route as AdminRedefinirSenhaRouteImport } from './routes/admin_.redefinir-senha'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
@@ -48,6 +49,11 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AdminExecutiveRoute = AdminExecutiveRouteImport.update({
+  id: '/executive',
+  path: '/executive',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminEsqueciSenhaRoute = AdminEsqueciSenhaRouteImport.update({
   id: '/admin_/esqueci-senha',
   path: '/admin/esqueci-senha',
@@ -84,10 +90,11 @@ const LojaStoreIdVendedoraRepIdNaoVendeuRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/mcp': typeof McpRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/executive': typeof AdminExecutiveRoute
   '/admin/esqueci-senha': typeof AdminEsqueciSenhaRoute
   '/admin/redefinir-senha': typeof AdminRedefinirSenhaRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -97,10 +104,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/mcp': typeof McpRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/executive': typeof AdminExecutiveRoute
   '/admin/esqueci-senha': typeof AdminEsqueciSenhaRoute
   '/admin/redefinir-senha': typeof AdminRedefinirSenhaRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -111,10 +119,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/mcp': typeof McpRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/executive': typeof AdminExecutiveRoute
   '/admin_/esqueci-senha': typeof AdminEsqueciSenhaRoute
   '/admin_/redefinir-senha': typeof AdminRedefinirSenhaRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/executive'
     | '/admin/esqueci-senha'
     | '/admin/redefinir-senha'
     | '/.mcp/invoke-tool/$tool'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/executive'
     | '/admin/esqueci-senha'
     | '/admin/redefinir-senha'
     | '/.mcp/invoke-tool/$tool'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/executive'
     | '/admin_/esqueci-senha'
     | '/admin_/redefinir-senha'
     | '/.mcp/invoke-tool/$tool'
@@ -166,7 +178,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRoute
+  AdminRoute: typeof AdminRouteWithChildren
   McpRoute: typeof McpRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
@@ -215,6 +227,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/executive': {
+      id: '/admin/executive'
+      path: '/executive'
+      fullPath: '/admin/executive'
+      preLoaderRoute: typeof AdminExecutiveRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin_/esqueci-senha': {
       id: '/admin_/esqueci-senha'
       path: '/admin/esqueci-senha'
@@ -260,9 +279,19 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AdminRouteChildren {
+  AdminExecutiveRoute: typeof AdminExecutiveRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminExecutiveRoute: AdminExecutiveRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRoute: AdminRoute,
+  AdminRoute: AdminRouteWithChildren,
   McpRoute: McpRoute,
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
