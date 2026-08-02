@@ -901,6 +901,20 @@ function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+type TrendMetric = "faturamento" | "atendimentos" | "conversao";
+const TREND_METRIC_LABELS: Record<TrendMetric, string> = {
+  faturamento: "Faturamento",
+  atendimentos: "Atendimentos",
+  conversao: "Conversão",
+};
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function dayLabel(d: Date): string {
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 function StoreFilter({ storeId, setStoreId, stores }: { storeId: string; setStoreId: (s: string) => void; stores: Store[] }) {
   return (
     <div className="mb-4 flex items-center gap-2">
@@ -1080,17 +1094,55 @@ function Dashboard() {
       .sort((a, b) => b.total - a.total);
   }, [noSaleDetails]);
 
-  const hourlyChart = useMemo(() => {
-    const map = new Map<number, { hour: number; vendas: number; naovendas: number }>();
-    for (let h = 8; h <= 22; h++) map.set(h, { hour: h, vendas: 0, naovendas: 0 });
-    for (const a of filteredData) {
-      const h = new Date(a.created_at).getHours();
-      if (!map.has(h)) map.set(h, { hour: h, vendas: 0, naovendas: 0 });
-      const cur = map.get(h)!;
-      if (a.type === "sale") cur.vendas++; else cur.naovendas++;
+  const [trendMetric, setTrendMetric] = useState<TrendMetric>("faturamento");
+  const isHourlyTrend = preset === "hoje" || preset === "ontem";
+
+  const trendChart = useMemo(() => {
+    type Bucket = { label: string; faturamento: number; atendimentos: number; vendas: number };
+    const buckets: Bucket[] = [];
+    const byKey = new Map<string, Bucket>();
+
+    if (isHourlyTrend) {
+      for (let h = 8; h <= 22; h++) {
+        const b: Bucket = { label: `${h}h`, faturamento: 0, atendimentos: 0, vendas: 0 };
+        buckets.push(b);
+        byKey.set(String(h), b);
+      }
+      for (const a of filteredData) {
+        const h = new Date(a.created_at).getHours();
+        let b = byKey.get(String(h));
+        if (!b) { b = { label: `${h}h`, faturamento: 0, atendimentos: 0, vendas: 0 }; byKey.set(String(h), b); buckets.push(b); }
+        b.atendimentos++;
+        if (a.type === "sale") { b.vendas++; b.faturamento += a.amount ?? 0; }
+      }
+      buckets.sort((x, y) => parseInt(x.label) - parseInt(y.label));
+    } else {
+      const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+      while (cursor <= endDay) {
+        const key = dayKey(cursor);
+        const b: Bucket = { label: dayLabel(cursor), faturamento: 0, atendimentos: 0, vendas: 0 };
+        buckets.push(b);
+        byKey.set(key, b);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      for (const a of filteredData) {
+        const d = new Date(a.created_at);
+        const key = dayKey(d);
+        let b = byKey.get(key);
+        if (!b) { b = { label: dayLabel(d), faturamento: 0, atendimentos: 0, vendas: 0 }; byKey.set(key, b); buckets.push(b); }
+        b.atendimentos++;
+        if (a.type === "sale") { b.vendas++; b.faturamento += a.amount ?? 0; }
+      }
     }
-    return Array.from(map.values()).sort((a, b) => a.hour - b.hour).map((v) => ({ ...v, hour: `${v.hour}h` }));
-  }, [filteredData]);
+
+    return buckets.map((b) => ({
+      label: b.label,
+      faturamento: Math.round(b.faturamento * 100) / 100,
+      atendimentos: b.atendimentos,
+      conversao: b.atendimentos > 0 ? Math.round((b.vendas / b.atendimentos) * 1000) / 10 : 0,
+    }));
+  }, [filteredData, isHourlyTrend, start, end]);
 
   return (
     <div>
@@ -1184,15 +1236,33 @@ function Dashboard() {
         </section>
 
         <section className="rounded-2xl bg-card p-5 shadow-sm">
-          <h3 className="mb-4 text-lg font-bold">Atendimentos por horário</h3>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-lg font-bold">Tendência</h3>
+            <div className="flex gap-1 rounded-lg bg-muted p-1">
+              {(Object.keys(TREND_METRIC_LABELS) as TrendMetric[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setTrendMetric(m)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                    trendMetric === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  {TREND_METRIC_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={hourlyChart}>
+            <LineChart data={trendChart}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="hour" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Line type="monotone" dataKey="vendas" stroke="var(--color-success)" strokeWidth={3} dot />
-              <Line type="monotone" dataKey="naovendas" stroke="var(--color-destructive)" strokeWidth={3} dot />
+              <XAxis dataKey="label" />
+              <YAxis allowDecimals={trendMetric !== "atendimentos"} />
+              <Tooltip
+                formatter={(value: number) =>
+                  trendMetric === "faturamento" ? formatBRL(Number(value)) : trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : value
+                }
+              />
+              <Line type="monotone" dataKey={trendMetric} stroke="var(--color-brand)" strokeWidth={3} dot />
             </LineChart>
           </ResponsiveContainer>
         </section>
