@@ -292,7 +292,7 @@ Celular não é foco desta etapa (o pedido é Desktop + Tablet) — o layout de 
 3. ~~Horário comercial fixo (9h–20h) em vez de coluna nova em `stores`.~~ **Aprovado e implementado** (Commit 10).
 4. ~~"Grupo de lojas" fica fora desta etapa.~~ **Confirmado oficialmente fora de escopo** — nenhuma ação relacionada nesta etapa.
 
-## Pontos em aberto — rodada 2 (novos, desta correção)
+## Pontos em aberto — rodada 2 (resolvidos)
 
-5. **Faturamento parcial em "Todas as lojas"**: quando só parte das lojas em escopo já tem a comissão do mês importada, proponho somar só as que têm dado e avisar discretamente ("dados de 2 de 3 lojas") em vez de esconder o card inteiro. Alternativa mais conservadora: só mostrar Faturamento/Ticket Médio quando **todas** as lojas em escopo tiverem importado — mais simples de implementar e sem risco de mal-entendido sobre "quanto falta", ao custo de esconder o dado com mais frequência. Qual prefere?
-6. **Personalizado que atravessa mais de um mês civil**: proponho simplesmente não mostrar Faturamento/Ticket Médio nesse caso (regra 2 da seção 2) em vez de tentar somar comissão de meses diferentes. Confirma que serve, ou prefere alguma outra regra?
+5. ~~Faturamento parcial em "Todas as lojas".~~ **Decidido**: soma as lojas que já têm comissão importada e mostra a nota discreta ("dados de 2 de 3 lojas").
+6. ~~Personalizado que atravessa mais de um mês civil.~~ **Decidido**: não mostra Faturamento/Ticket Médio nesse caso — cai para os KPIs operacionais.
