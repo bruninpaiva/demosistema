@@ -39,7 +39,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Info,
-  MoreVertical,
   HandMetal,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
@@ -2626,21 +2625,13 @@ function StoresTab({
             alertCount={alerts.filter((a) => a.storeId === s.id).length}
             onOpen={() => setSelectedStoreId(s.id)}
             actions={
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    aria-label={`Ações de ${s.name}`}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <MoreVertical size={18} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => remove(s)} className="gap-2 text-destructive focus:text-destructive">
-                    <Trash2 size={14} /> Excluir
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <button
+                onClick={() => remove(s)}
+                aria-label={`Excluir ${s.name}`}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 size={18} />
+              </button>
             }
           />
         ))}
