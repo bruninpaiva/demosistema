@@ -848,6 +848,7 @@ function deltaPontosPercentuais(current: number, previous: number): KpiDelta {
 type Attendance = {
   id: string;
   created_at: string;
+  closed_at: string | null;
   sales_rep_id: string;
   store_id: string | null;
   type: "sale" | "no_sale";
@@ -875,7 +876,7 @@ function useAttendances(start: Date, end: Date, storeId: string) {
     setLoading(true);
     let q = supabase
       .from("attendances")
-      .select("id,created_at,sales_rep_id,store_id,type,reason_id,reason_other_text,notes,amount")
+      .select("id,created_at,closed_at,sales_rep_id,store_id,type,reason_id,reason_other_text,notes,amount")
       .eq("status", "closed")
       .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString())
@@ -1155,9 +1156,14 @@ type DashboardMetrics = {
   atendimentos: number;
   vendas: number;
   naoVendas: number;
-  faturamento: number;
   conversao: number;
-  ticketMedio: number;
+  // Tempo médio entre abrir e fechar um atendimento (venda ou não-venda) — em
+  // minutos. attendances.amount NÃO entra mais aqui: o kiosk nunca coleta um
+  // valor monetário ao fechar uma venda (confirmado em
+  // loja.$storeId.vendedora.$repId.index.tsx, registerSale), então
+  // faturamento/ticket médio "de attendances" seria sempre R$ 0 na prática.
+  // Faturamento real vem só de commission_rows — ver useCommissionSummary.
+  tempoMedioAtendimentoMin: number;
 };
 
 function computeDashboardMetrics(data: Attendance[]): DashboardMetrics {
@@ -1165,10 +1171,14 @@ function computeDashboardMetrics(data: Attendance[]): DashboardMetrics {
   const vendasRows = data.filter((a) => a.type === "sale");
   const vendas = vendasRows.length;
   const naoVendas = atendimentos - vendas;
-  const faturamento = vendasRows.reduce((sum, a) => sum + (a.amount ?? 0), 0);
   const conversao = atendimentos > 0 ? (vendas / atendimentos) * 100 : 0;
-  const ticketMedio = vendas > 0 ? faturamento / vendas : 0;
-  return { atendimentos, vendas, naoVendas, faturamento, conversao, ticketMedio };
+  const closedRows = data.filter((a) => a.closed_at);
+  const tempoMedioAtendimentoMin =
+    closedRows.length > 0
+      ? closedRows.reduce((sum, a) => sum + (new Date(a.closed_at!).getTime() - new Date(a.created_at).getTime()) / 60000, 0) /
+        closedRows.length
+      : 0;
+  return { atendimentos, vendas, naoVendas, conversao, tempoMedioAtendimentoMin };
 }
 
 function useDashboardMetrics(data: Attendance[]): DashboardMetrics {
@@ -1177,6 +1187,50 @@ function useDashboardMetrics(data: Attendance[]): DashboardMetrics {
 
 function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatMinutes(mins: number): string {
+  const rounded = Math.round(mins);
+  if (rounded < 60) return `${rounded} min`;
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
+  return m > 0 ? `${h}h ${m}min` : `${h}h`;
+}
+
+function formatAvgMinutes(mins: number): string {
+  if (mins >= 60) return formatMinutes(mins);
+  return `${mins.toFixed(1)} min`;
+}
+
+// Minutos em pausa (excluindo o sentinela "Fora horário de trabalho", já
+// ignorado em todo o resto do app) no período/escopo selecionado.
+function useBreakMinutes(start: Date, end: Date, storeId: string, repId: string): number {
+  const [minutes, setMinutes] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let q = supabase
+        .from("rep_breaks")
+        .select("sales_rep_id,store_id,reason,started_at,ended_at")
+        .gte("started_at", start.toISOString())
+        .lte("started_at", end.toISOString());
+      if (storeId !== ALL_STORES) q = q.eq("store_id", storeId);
+      if (repId !== ALL_REPS) q = q.eq("sales_rep_id", repId);
+      const { data } = await q;
+      if (!alive) return;
+      const total = ((data ?? []) as { reason: string | null; started_at: string; ended_at: string | null }[])
+        .filter((b) => b.reason !== "Fora horário de trabalho")
+        .reduce((sum, b) => {
+          const endMs = b.ended_at ? new Date(b.ended_at).getTime() : Date.now();
+          return sum + (endMs - new Date(b.started_at).getTime()) / 60000;
+        }, 0);
+      setMinutes(Math.round(total));
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [start.getTime(), end.getTime(), storeId, repId]);
+  return minutes;
 }
 
 type TrendMetric = "faturamento" | "atendimentos" | "conversao";
@@ -1308,6 +1362,8 @@ function Dashboard() {
 
   const metrics = useDashboardMetrics(filteredData);
   const previousMetrics = useDashboardMetrics(filteredPreviousData);
+  const breakMinutes = useBreakMinutes(start, end, storeId, repId);
+  const previousBreakMinutes = useBreakMinutes(previousRange.start, previousRange.end, storeId, repId);
 
   const allAlerts = useAlerts(stores, reps);
   const visibleAlerts = useMemo(
@@ -1449,12 +1505,6 @@ function Dashboard() {
       {/* xl (não md): em tablet — retrato ou paisagem — os 4 KPIs ficam 2x2; só desktop de verdade vira uma fileira só. */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Kpi
-          title="Faturamento"
-          value={formatBRL(metrics.faturamento)}
-          accent="brand"
-          delta={compareEnabled ? deltaPct(metrics.faturamento, previousMetrics.faturamento) : null}
-        />
-        <Kpi
           title="Atendimentos"
           value={metrics.atendimentos}
           delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
@@ -1466,9 +1516,14 @@ function Dashboard() {
           delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
         />
         <Kpi
-          title="Ticket médio"
-          value={formatBRL(metrics.ticketMedio)}
-          delta={compareEnabled ? deltaPct(metrics.ticketMedio, previousMetrics.ticketMedio) : null}
+          title="Tempo médio de atendimento"
+          value={formatAvgMinutes(metrics.tempoMedioAtendimentoMin)}
+          delta={compareEnabled ? deltaPct(metrics.tempoMedioAtendimentoMin, previousMetrics.tempoMedioAtendimentoMin) : null}
+        />
+        <Kpi
+          title="Minutos em pausa"
+          value={formatMinutes(breakMinutes)}
+          delta={compareEnabled ? deltaPct(breakMinutes, previousBreakMinutes) : null}
         />
       </div>
 
