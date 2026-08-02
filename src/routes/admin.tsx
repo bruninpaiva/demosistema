@@ -1144,6 +1144,29 @@ function Dashboard() {
     }));
   }, [filteredData, isHourlyTrend, start, end]);
 
+  // Comparativo entre lojas, na mesma métrica escolhida no gráfico de tendência.
+  // Só faz sentido quando "Todas as lojas" está selecionado — comparar uma loja
+  // com ela mesma não ajuda em nada.
+  const storeRanking = useMemo(() => {
+    if (storeId !== ALL_STORES) return [];
+    const map = new Map<string, { faturamento: number; atendimentos: number; vendas: number }>();
+    for (const a of filteredData) {
+      const sid = a.store_id ?? "sem_loja";
+      const cur = map.get(sid) ?? { faturamento: 0, atendimentos: 0, vendas: 0 };
+      cur.atendimentos++;
+      if (a.type === "sale") { cur.vendas++; cur.faturamento += a.amount ?? 0; }
+      map.set(sid, cur);
+    }
+    return Array.from(map.entries())
+      .map(([sid, v]) => ({
+        name: stores.find((s) => s.id === sid)?.name ?? "—",
+        faturamento: Math.round(v.faturamento * 100) / 100,
+        atendimentos: v.atendimentos,
+        conversao: v.atendimentos > 0 ? Math.round((v.vendas / v.atendimentos) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => b[trendMetric] - a[trendMetric]);
+  }, [filteredData, storeId, stores, trendMetric]);
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-4">
@@ -1267,6 +1290,29 @@ function Dashboard() {
           </ResponsiveContainer>
         </section>
       </div>
+
+      {storeId === ALL_STORES && (
+        <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
+          <h3 className="mb-4 text-lg font-bold">Ranking de lojas — {TREND_METRIC_LABELS[trendMetric]}</h3>
+          {storeRanking.length === 0 ? (
+            <p className="text-muted-foreground">Sem dados no período.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(140, storeRanking.length * 60)}>
+              <BarChart data={storeRanking} layout="vertical" margin={{ left: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={trendMetric !== "atendimentos"} />
+                <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value: number) =>
+                    trendMetric === "faturamento" ? formatBRL(Number(value)) : trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : value
+                  }
+                />
+                <Bar dataKey={trendMetric} fill="var(--color-brand)" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </section>
+      )}
 
       <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
         <h3 className="mb-4 text-lg font-bold">Não vendas por vendedora</h3>
