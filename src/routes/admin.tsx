@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Plus,
@@ -1401,17 +1401,30 @@ function UsersTab() {
   const [editPass, setEditPass] = useState("");
 
   const actor = getAdminActor();
+  const requestIdRef = useRef(0);
 
   const load = async () => {
     if (!actor) return;
+    const requestId = ++requestIdRef.current;
     setLoading(true);
-    const { data, error } = await supabase.rpc("admin_list", {
-      _actor: actor.user,
-      _actor_password: actor.pass,
-    });
-    setLoading(false);
-    if (error) { toast.error("Erro ao carregar usuários"); return; }
-    setUsers((data ?? []) as AdminUser[]);
+    try {
+      const { data, error } = await supabase.rpc("admin_list", {
+        _actor: actor.user,
+        _actor_password: actor.pass,
+      });
+      // Ignora a resposta se, enquanto ela estava em trânsito, outra chamada mais
+      // recente a load() já foi disparada (ex.: efeito duplicado, troca rápida de aba).
+      if (requestId !== requestIdRef.current) return;
+      if (error) {
+        toast.error("Erro ao carregar usuários");
+        return;
+      }
+      setUsers((data ?? []) as AdminUser[]);
+    } catch {
+      if (requestId === requestIdRef.current) toast.error("Erro ao carregar usuários");
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
