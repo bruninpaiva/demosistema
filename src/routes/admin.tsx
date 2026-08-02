@@ -40,6 +40,9 @@ import {
   AlertTriangle,
   Info,
   HandMetal,
+  UserPlus,
+  Link2,
+  Unlink,
 } from "lucide-react";
 import PromotionsTab from "@/components/PromotionsTab";
 import CommissionTab from "@/components/CommissionTab";
@@ -113,7 +116,6 @@ function AdminPage() {
   const goToRep = (repId: string) => { setPerRepFocusId(repId); setTab("por-vendedora"); };
   const goToTeamTab = (storeId: string) => { setTeamTabFocusStoreId(storeId); setTab("vendedoras"); };
   const goToCommissao = (importId: string) => { setCommissaoFocusImportId(importId); setTab("comissao"); };
-  const goToUsersTab = () => setTab("usuarios");
   const [authed, setAuthed] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(AUTH_KEY) === "1"
   );
@@ -286,7 +288,7 @@ function AdminPage() {
         {tab === "por-vendedora" && <PerRepTab initialRepId={perRepFocusId} />}
         {tab === "pausas" && <BreaksTab />}
         {tab === "lojas" && (
-          <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} onOpenUsersTab={goToUsersTab} />
+          <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} />
         )}
         {tab === "vendedoras" && <SalesRepsTab initialStoreId={teamTabFocusStoreId} />}
         {tab === "motivos" && <ReasonsTab />}
@@ -868,12 +870,12 @@ type Attendance = {
   amount: number | null;
 };
 
-type Store = { id: string; name: string; active: boolean };
+type Store = { id: string; name: string; active: boolean; manager_id: string | null };
 
 function useStores() {
   const [stores, setStores] = useState<Store[]>([]);
   const load = () =>
-    supabase.from("stores").select("id,name,active").order("name").then(({ data }) => setStores((data ?? []) as Store[]));
+    supabase.from("stores").select("id,name,active,manager_id").order("name").then(({ data }) => setStores((data ?? []) as Store[]));
   useEffect(() => { load(); }, []);
   return { stores, reload: load };
 }
@@ -2161,7 +2163,6 @@ function StoreManagementCenter({
   onOpenRep,
   onOpenTeamTab,
   onOpenCommissao,
-  onOpenUsersTab,
   onStoreChanged,
 }: {
   store: Store;
@@ -2171,7 +2172,6 @@ function StoreManagementCenter({
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
   onOpenCommissao: (importId: string) => void;
-  onOpenUsersTab: () => void;
   onStoreChanged: () => void;
 }) {
   const [preset, setPreset] = useState<Preset>("hoje");
@@ -2225,7 +2225,7 @@ function StoreManagementCenter({
       />
       <StoreTeamSection store={store} start={start} end={end} onOpenRep={onOpenRep} onOpenTeamTab={onOpenTeamTab} />
       <StoreHistorySection store={store} onOpenCommissao={onOpenCommissao} />
-      <StoreConfigSection store={store} onOpenUsersTab={onOpenUsersTab} onChanged={onStoreChanged} />
+      <StoreConfigSection store={store} onChanged={onStoreChanged} />
     </div>
   );
 }
@@ -2297,41 +2297,61 @@ function StoreHistorySection({ store, onOpenCommissao }: { store: Store; onOpenC
   );
 }
 
-function useStoreManagers(storeId: string) {
-  const [names, setNames] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const actor = getAdminActor();
+type StoreManager = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  active: boolean;
+};
 
-  useEffect(() => {
+function useStoreManagers(managerId: string | null) {
+  const [managers, setManagers] = useState<StoreManager[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
     let alive = true;
-    if (!actor) { setLoading(false); return; }
     setLoading(true);
     supabase
-      .rpc("admin_list", { _actor: actor.user, _actor_password: actor.pass })
-      .then(({ data, error }: { data: unknown; error: unknown }) => {
+      .from("store_managers")
+      .select("id,name,phone,email,active")
+      .order("name")
+      .then(({ data, error }) => {
         if (!alive) return;
-        if (error) { setNames([]); setLoading(false); return; }
-        const rows = (data as (AdminUser & { store_id?: string | null })[]) ?? [];
-        setNames(rows.filter((u) => u.store_id === storeId && u.role === "gerente" && u.active).map((u) => u.name));
+        if (error) { setManagers([]); setLoading(false); return; }
+        setManagers((data ?? []) as StoreManager[]);
         setLoading(false);
       });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId, actor?.user, actor?.pass]);
+  };
 
-  return { names, loading };
+  useEffect(() => load(), [managerId]);
+
+  return {
+    managers,
+    currentManager: managers.find((m) => m.id === managerId) ?? null,
+    loading,
+    reload: load,
+  };
+}
+
+function promptOptional(label: string): string | null {
+  const value = prompt(label);
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed || null;
 }
 
 function StoreConfigSection({
   store,
-  onOpenUsersTab,
   onChanged,
 }: {
   store: Store;
-  onOpenUsersTab: () => void;
   onChanged: () => void;
 }) {
-  const { names: managerNames, loading: managersLoading } = useStoreManagers(store.id);
+  const actor = getAdminActor();
+  const canManageManagers = actor?.role === "admin" || actor?.role === "super_admin";
+  const { managers, currentManager, loading: managersLoading, reload: reloadManagers } = useStoreManagers(store.manager_id);
 
   const renamePrompt = async () => {
     const v = prompt("Novo nome da loja:", store.name);
@@ -2365,6 +2385,49 @@ function StoreConfigSection({
     const { error } = await supabase.from("stores").update({ active: !store.active }).eq("id", store.id);
     if (error) return toast.error(error.message);
     onChanged();
+  };
+
+  const linkManager = async () => {
+    const activeManagers = managers.filter((m) => m.active);
+    if (activeManagers.length === 0) {
+      toast.error("Cadastre um gerente antes de vincular.");
+      return;
+    }
+    const options = activeManagers.map((m, i) => `${i + 1}. ${m.name}`).join("\n");
+    const choice = prompt(`Vincular qual gerente a ${store.name}? Digite o número:\n\n${options}`);
+    if (!choice) return;
+    const idx = Number(choice.trim()) - 1;
+    const selected = activeManagers[idx];
+    if (!selected) return toast.error("Opção inválida");
+    const { error } = await supabase.from("stores").update({ manager_id: selected.id }).eq("id", store.id);
+    if (error) return toast.error(error.message);
+    toast.success("Gerente vinculado"); onChanged();
+  };
+
+  const createManager = async () => {
+    const name = prompt("Nome do gerente:");
+    if (!name || !name.trim()) return;
+    const phone = promptOptional("Telefone do gerente (opcional):");
+    const email = promptOptional("E-mail do gerente (opcional):");
+    const { data, error } = await supabase
+      .from("store_managers")
+      .insert({ name: name.trim(), phone, email })
+      .select("id")
+      .single();
+    if (error) return toast.error(error.message);
+    const { error: linkError } = await supabase.from("stores").update({ manager_id: data.id }).eq("id", store.id);
+    if (linkError) return toast.error(linkError.message);
+    toast.success("Gerente cadastrado e vinculado");
+    reloadManagers();
+    onChanged();
+  };
+
+  const unlinkManager = async () => {
+    if (!currentManager) return;
+    if (!confirm(`Remover o vínculo de ${currentManager.name} com ${store.name}? O cadastro do gerente será mantido.`)) return;
+    const { error } = await supabase.from("stores").update({ manager_id: null }).eq("id", store.id);
+    if (error) return toast.error(error.message);
+    toast.success("Vínculo removido"); onChanged();
   };
 
   return (
@@ -2421,20 +2484,46 @@ function StoreConfigSection({
           </button>
         </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-border p-4">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Gerente(s) vinculado(s)</p>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border p-4">
+          <div className="min-w-0 space-y-1">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Gerente vinculado</p>
             {managersLoading ? (
               <p className="text-sm text-muted-foreground">Carregando...</p>
-            ) : managerNames.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum gerente vinculado a esta loja.</p>
+            ) : !currentManager ? (
+              <p className="text-sm text-muted-foreground">Nenhum gerente vinculado.</p>
             ) : (
-              <p className="truncate text-lg font-bold text-foreground">{managerNames.join(", ")}</p>
+              <div>
+                <p className="truncate text-lg font-bold text-foreground">{currentManager.name}</p>
+                {currentManager.phone && <p className="text-sm text-muted-foreground">{currentManager.phone}</p>}
+                {currentManager.email && <p className="text-sm text-muted-foreground">{currentManager.email}</p>}
+              </div>
             )}
           </div>
-          <button onClick={onOpenUsersTab} className="shrink-0 text-xs font-semibold text-brand hover:underline">
-            Ver em Usuários
-          </button>
+          {canManageManagers && (
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              <button
+                onClick={linkManager}
+                className="flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-muted"
+              >
+                <Link2 size={14} /> {currentManager ? "Trocar" : "Vincular"}
+              </button>
+              {currentManager && (
+                <button
+                  onClick={unlinkManager}
+                  aria-label="Remover vínculo do gerente"
+                  className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Unlink size={14} />
+                </button>
+              )}
+              <button
+                onClick={createManager}
+                className="flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-muted"
+              >
+                <UserPlus size={14} /> Cadastrar
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -2543,12 +2632,10 @@ function StoresTab({
   onOpenRep,
   onOpenTeamTab,
   onOpenCommissao,
-  onOpenUsersTab,
 }: {
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
   onOpenCommissao: (importId: string) => void;
-  onOpenUsersTab: () => void;
 }) {
   const { stores, reload } = useStores();
   const [name, setName] = useState("");
@@ -2584,7 +2671,6 @@ function StoresTab({
         onOpenRep={onOpenRep}
         onOpenTeamTab={onOpenTeamTab}
         onOpenCommissao={onOpenCommissao}
-        onOpenUsersTab={onOpenUsersTab}
         onStoreChanged={reload}
       />
     );

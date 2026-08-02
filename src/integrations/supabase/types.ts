@@ -88,6 +88,50 @@ export type Database = {
           },
         ]
       }
+      store_managers: {
+        Row: {
+          access_enabled: boolean
+          active: boolean
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          access_enabled?: boolean
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          access_enabled?: boolean
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_managers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attendances: {
         Row: {
           amount: number | null
@@ -436,6 +480,7 @@ export type Database = {
           active: boolean
           created_at: string
           id: string
+          manager_id: string | null
           name: string
           pin: string
           updated_at: string
@@ -444,6 +489,7 @@ export type Database = {
           active?: boolean
           created_at?: string
           id?: string
+          manager_id?: string | null
           name: string
           pin: string
           updated_at?: string
@@ -452,11 +498,20 @@ export type Database = {
           active?: boolean
           created_at?: string
           id?: string
+          manager_id?: string | null
           name?: string
           pin?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "stores_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "store_managers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
