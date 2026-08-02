@@ -938,12 +938,12 @@ function LiveStrip({ storeId }: { storeId: string }) {
       </div>
       <div className="flex items-center gap-2 text-sm">
         <Users size={16} className="text-brand" />
-        <span className="font-bold">{emAtendimento}</span>
+        <span className="text-lg font-bold">{emAtendimento}</span>
         <span className="text-muted-foreground">em atendimento agora</span>
       </div>
       <div className="flex items-center gap-2 text-sm">
         <Coffee size={16} className="text-amber-600" />
-        <span className="font-bold">{emPausa}</span>
+        <span className="text-lg font-bold">{emPausa}</span>
         <span className="text-muted-foreground">em pausa agora</span>
       </div>
       {secondsAgo !== null && (
@@ -1482,7 +1482,8 @@ function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {/* xl (não md): em tablet — retrato ou paisagem — os 4 KPIs ficam 2x2; só desktop de verdade vira uma fileira só. */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Kpi
           title="Faturamento"
           value={formatBRL(metrics.faturamento)}
@@ -1513,7 +1514,9 @@ function Dashboard() {
 
       {loading && <p className="mt-6 text-center text-muted-foreground">Carregando…</p>}
 
-      <div className={`mt-8 grid grid-cols-1 gap-6 ${storeId === ALL_STORES ? "lg:grid-cols-2" : ""}`}>
+      {/* xl: em tablet as duas tabelas ficam empilhadas (largura cheia cada uma) em vez de
+          espremidas lado a lado — tabela com várias colunas precisa de espaço. */}
+      <div className={`mt-8 grid grid-cols-1 gap-6 ${storeId === ALL_STORES ? "xl:grid-cols-2" : ""}`}>
         {storeId === ALL_STORES && (
           <RankingCard
             title="Ranking das lojas"
@@ -1530,8 +1533,8 @@ function Dashboard() {
         />
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <section className="rounded-2xl bg-card p-5 shadow-sm lg:col-span-2">
+      <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <section className="rounded-2xl bg-card p-5 shadow-sm xl:col-span-2">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-bold">Tendência</h3>
             <div className="flex gap-1 rounded-lg bg-muted p-1">
