@@ -1,41 +1,38 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Mail, Loader2, ArrowLeft, Copy, Check } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Mail, Loader2, ArrowLeft } from "lucide-react";
+import { requestPasswordReset } from "@/lib/auth/passwordReset.functions";
 
 export const Route = createFileRoute("/admin_/esqueci-senha")({
   component: ForgotPasswordPage,
 });
 
+const GENERIC_ERROR = "Não foi possível processar sua solicitação agora. Tente novamente mais tarde.";
+
 function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
-  const [devLink, setDevLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc("admin_request_password_reset", {
-      _email: email.trim(),
-    });
-    setBusy(false);
-    setSent(true);
-    // Sem provedor de e-mail configurado ainda: mostramos o link diretamente,
-    // deixado claro na tela que é um substituto temporário do envio real.
-    if (!error && data) {
-      const link = `${window.location.origin}/admin/redefinir-senha?token=${data}`;
-      setDevLink(link);
-    }
-  };
+    setError("");
 
-  const copyLink = async () => {
-    if (!devLink) return;
-    await navigator.clipboard.writeText(devLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      const result = await requestPasswordReset({ data: { email: email.trim() } });
+      if (result.ok) {
+        setSent(true);
+      } else {
+        setError(GENERIC_ERROR);
+      }
+    } catch {
+      setError(GENERIC_ERROR);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -63,6 +60,8 @@ function ForgotPasswordPage() {
               />
             </div>
 
+            {error && <p className="mt-3 text-sm font-semibold text-destructive">{error}</p>}
+
             <button
               type="submit"
               disabled={busy}
@@ -73,30 +72,9 @@ function ForgotPasswordPage() {
             </button>
           </form>
         ) : (
-          <div>
-            <p className="rounded-xl bg-muted p-4 text-center text-sm text-foreground">
-              Se esse e-mail estiver cadastrado, um link de redefinição válido por 15 minutos foi enviado.
-            </p>
-
-            {devLink && (
-              <div className="mt-4 rounded-xl border-2 border-dashed border-amber-400 bg-amber-50 p-4">
-                <p className="mb-2 text-xs font-semibold text-amber-800">
-                  Sem provedor de e-mail configurado ainda — link temporário para teste:
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 break-all rounded-lg bg-white px-2 py-1.5 text-xs text-amber-900">{devLink}</code>
-                  <button
-                    type="button"
-                    onClick={copyLink}
-                    className="shrink-0 rounded-lg border border-amber-400 p-1.5 text-amber-800 hover:bg-amber-100"
-                    aria-label="Copiar link"
-                  >
-                    {copied ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <p className="rounded-xl bg-muted p-4 text-center text-sm text-foreground">
+            Se esse e-mail estiver cadastrado, um link de redefinição válido por 15 minutos foi enviado.
+          </p>
         )}
 
         <Link
