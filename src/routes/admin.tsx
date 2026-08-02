@@ -2052,7 +2052,26 @@ function EmptyStoreSection({ title, description }: { title: string; description:
   );
 }
 
-function StoreManagementCenter({ store, onBack }: { store: Store; onBack: () => void }) {
+function StoreAlertsSection({ alerts }: { alerts: DashboardAlert[] }) {
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <h4 className="mb-4 text-base font-bold text-foreground">Alertas</h4>
+      {alerts.length === 0 ? (
+        <p className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Nenhum alerta ativo para esta loja agora.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {alerts.map((alert) => (
+            <AlertBanner key={alert.id} alert={alert} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StoreManagementCenter({ store, alerts, onBack }: { store: Store; alerts: DashboardAlert[]; onBack: () => void }) {
   return (
     <div className="space-y-5">
       <button
@@ -2083,7 +2102,7 @@ function StoreManagementCenter({ store, onBack }: { store: Store; onBack: () => 
         </div>
       </header>
 
-      <EmptyStoreSection title="Alertas" description="Em breve, mostra os alertas operacionais específicos desta loja." />
+      <StoreAlertsSection alerts={alerts} />
       <StoreOperationalStatus storeId={store.id} />
       <EmptyStoreSection
         title="Indicadores"
@@ -2162,7 +2181,13 @@ function StoresTab() {
   const selectedStore = stores.find((s) => s.id === selectedStoreId) ?? null;
 
   if (selectedStore) {
-    return <StoreManagementCenter store={selectedStore} onBack={() => setSelectedStoreId(null)} />;
+    return (
+      <StoreManagementCenter
+        store={selectedStore}
+        alerts={alerts.filter((a) => a.storeId === selectedStore.id)}
+        onBack={() => setSelectedStoreId(null)}
+      />
+    );
   }
 
   return (
