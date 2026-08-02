@@ -114,6 +114,7 @@ function AdminPage() {
   const goToRep = (repId: string) => { setPerRepFocusId(repId); setTab("por-vendedora"); };
   const goToTeamTab = (storeId: string) => { setTeamTabFocusStoreId(storeId); setTab("vendedoras"); };
   const goToCommissao = (importId: string) => { setCommissaoFocusImportId(importId); setTab("comissao"); };
+  const goToUsersTab = () => setTab("usuarios");
   const [authed, setAuthed] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(AUTH_KEY) === "1"
   );
@@ -285,7 +286,9 @@ function AdminPage() {
         {tab === "dashboard" && <Dashboard />}
         {tab === "por-vendedora" && <PerRepTab initialRepId={perRepFocusId} />}
         {tab === "pausas" && <BreaksTab />}
-        {tab === "lojas" && <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} />}
+        {tab === "lojas" && (
+          <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} onOpenUsersTab={goToUsersTab} />
+        )}
         {tab === "vendedoras" && <SalesRepsTab initialStoreId={teamTabFocusStoreId} />}
         {tab === "motivos" && <ReasonsTab />}
         {tab === "usuarios" && <UsersTab />}
@@ -2159,6 +2162,8 @@ function StoreManagementCenter({
   onOpenRep,
   onOpenTeamTab,
   onOpenCommissao,
+  onOpenUsersTab,
+  onStoreChanged,
 }: {
   store: Store;
   stores: Store[];
@@ -2167,6 +2172,8 @@ function StoreManagementCenter({
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
   onOpenCommissao: (importId: string) => void;
+  onOpenUsersTab: () => void;
+  onStoreChanged: () => void;
 }) {
   const [preset, setPreset] = useState<Preset>("hoje");
   const [from, setFrom] = useState("");
@@ -2219,10 +2226,7 @@ function StoreManagementCenter({
       />
       <StoreTeamSection store={store} start={start} end={end} onOpenRep={onOpenRep} onOpenTeamTab={onOpenTeamTab} />
       <StoreHistorySection store={store} onOpenCommissao={onOpenCommissao} />
-      <EmptyStoreSection
-        title="Configurações da loja"
-        description="Em breve, concentra os dados simples da loja que podem ser editados aqui."
-      />
+      <StoreConfigSection store={store} onOpenUsersTab={onOpenUsersTab} onChanged={onStoreChanged} />
     </div>
   );
 }
@@ -2290,6 +2294,150 @@ function StoreHistorySection({ store, onOpenCommissao }: { store: Store; onOpenC
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function useStoreManagers(storeId: string) {
+  const [names, setNames] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const actor = getAdminActor();
+
+  useEffect(() => {
+    let alive = true;
+    if (!actor) { setLoading(false); return; }
+    setLoading(true);
+    supabase
+      .rpc("admin_list", { _actor: actor.user, _actor_password: actor.pass })
+      .then(({ data, error }: { data: unknown; error: unknown }) => {
+        if (!alive) return;
+        if (error) { setNames([]); setLoading(false); return; }
+        const rows = (data as (AdminUser & { store_id?: string | null })[]) ?? [];
+        setNames(rows.filter((u) => u.store_id === storeId && u.role === "gerente" && u.active).map((u) => u.name));
+        setLoading(false);
+      });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, actor?.user, actor?.pass]);
+
+  return { names, loading };
+}
+
+function StoreConfigSection({
+  store,
+  onOpenUsersTab,
+  onChanged,
+}: {
+  store: Store;
+  onOpenUsersTab: () => void;
+  onChanged: () => void;
+}) {
+  const { names: managerNames, loading: managersLoading } = useStoreManagers(store.id);
+
+  const renamePrompt = async () => {
+    const v = prompt("Novo nome da loja:", store.name);
+    if (!v || !v.trim() || v.trim() === store.name) return;
+    const { error } = await supabase.from("stores").update({ name: v.trim() }).eq("id", store.id);
+    if (error) return toast.error(error.message);
+    toast.success("Nome atualizado"); onChanged();
+  };
+
+  const changePin = async () => {
+    const v = prompt(`Novo PIN para ${store.name} (4 a 8 dígitos):`);
+    if (!v) return;
+    const trimmed = v.trim();
+    if (!/^\d{4,8}$/.test(trimmed)) return toast.error("PIN deve ter 4 a 8 dígitos");
+    const { error } = await supabase.from("stores").update({ pin: trimmed }).eq("id", store.id);
+    if (error) return toast.error(error.message);
+    toast.success("PIN atualizado"); onChanged();
+  };
+
+  const regenPin = async () => {
+    if (!confirm(`Gerar um novo PIN aleatório para ${store.name}?`)) return;
+    const newPin = randomPin();
+    const { error } = await supabase.from("stores").update({ pin: newPin }).eq("id", store.id);
+    if (error) return toast.error(error.message);
+    alert(`Novo PIN de ${store.name}: ${newPin}\n\nAnote agora — ele não será mostrado novamente.`);
+    toast.success(`Novo PIN: ${newPin}`);
+    onChanged();
+  };
+
+  const toggleActive = async () => {
+    const { error } = await supabase.from("stores").update({ active: !store.active }).eq("id", store.id);
+    if (error) return toast.error(error.message);
+    onChanged();
+  };
+
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <h4 className="mb-4 text-base font-bold text-foreground">Configurações da loja</h4>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="flex items-center justify-between rounded-xl border border-border p-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Nome</p>
+            <p className="truncate text-lg font-bold text-foreground">{store.name}</p>
+          </div>
+          <button
+            onClick={renamePrompt}
+            aria-label="Renomear loja"
+            className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Pencil size={16} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-border p-4">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">PIN de acesso</p>
+            <p className="text-lg font-bold text-foreground">Oculto por segurança</p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              onClick={changePin}
+              aria-label="Editar PIN"
+              className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <KeyRound size={16} />
+            </button>
+            <button
+              onClick={regenPin}
+              aria-label="Gerar PIN aleatório"
+              className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-border p-4">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Status</p>
+            <p className="text-lg font-bold text-foreground">{store.active ? "Ativa" : "Inativa"}</p>
+          </div>
+          <button
+            onClick={toggleActive}
+            className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-muted"
+          >
+            {store.active ? "Desativar" : "Ativar"}
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-border p-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Gerente(s) vinculado(s)</p>
+            {managersLoading ? (
+              <p className="text-sm text-muted-foreground">Carregando...</p>
+            ) : managerNames.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum gerente vinculado a esta loja.</p>
+            ) : (
+              <p className="truncate text-lg font-bold text-foreground">{managerNames.join(", ")}</p>
+            )}
+          </div>
+          <button onClick={onOpenUsersTab} className="shrink-0 text-xs font-semibold text-brand hover:underline">
+            Ver em Usuários
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
@@ -2396,10 +2544,12 @@ function StoresTab({
   onOpenRep,
   onOpenTeamTab,
   onOpenCommissao,
+  onOpenUsersTab,
 }: {
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
   onOpenCommissao: (importId: string) => void;
+  onOpenUsersTab: () => void;
 }) {
   const { stores, reload } = useStores();
   const [name, setName] = useState("");
@@ -2414,40 +2564,6 @@ function StoresTab({
     const { error } = await supabase.from("stores").insert({ name: name.trim(), pin: finalPin });
     if (error) return toast.error(error.message);
     setName(""); setPin(""); toast.success("Loja cadastrada"); reload();
-  };
-
-  const renamePrompt = async (s: Store) => {
-    const v = prompt("Novo nome da loja:", s.name);
-    if (!v || !v.trim() || v.trim() === s.name) return;
-    const { error } = await supabase.from("stores").update({ name: v.trim() }).eq("id", s.id);
-    if (error) return toast.error(error.message);
-    toast.success("Nome atualizado"); reload();
-  };
-
-  const changePin = async (s: Store) => {
-    const v = prompt(`Novo PIN para ${s.name} (4 a 8 dígitos):`);
-    if (!v) return;
-    const trimmed = v.trim();
-    if (!/^\d{4,8}$/.test(trimmed)) return toast.error("PIN deve ter 4 a 8 dígitos");
-    const { error } = await supabase.from("stores").update({ pin: trimmed }).eq("id", s.id);
-    if (error) return toast.error(error.message);
-    toast.success("PIN atualizado"); reload();
-  };
-
-  const regenPin = async (s: Store) => {
-    if (!confirm(`Gerar um novo PIN aleatório para ${s.name}?`)) return;
-    const newPin = randomPin();
-    const { error } = await supabase.from("stores").update({ pin: newPin }).eq("id", s.id);
-    if (error) return toast.error(error.message);
-    alert(`Novo PIN de ${s.name}: ${newPin}\n\nAnote agora — ele não será mostrado novamente.`);
-    toast.success(`Novo PIN: ${newPin}`);
-    reload();
-  };
-
-  const toggle = async (s: Store) => {
-    const { error } = await supabase.from("stores").update({ active: !s.active }).eq("id", s.id);
-    if (error) return toast.error(error.message);
-    reload();
   };
 
   const remove = async (s: Store) => {
@@ -2469,6 +2585,8 @@ function StoresTab({
         onOpenRep={onOpenRep}
         onOpenTeamTab={onOpenTeamTab}
         onOpenCommissao={onOpenCommissao}
+        onOpenUsersTab={onOpenUsersTab}
+        onStoreChanged={reload}
       />
     );
   }
@@ -2518,19 +2636,6 @@ function StoresTab({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => renamePrompt(s)} className="gap-2">
-                    <Pencil size={14} /> Renomear
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => changePin(s)} className="gap-2">
-                    <KeyRound size={14} /> Editar PIN
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => regenPin(s)} className="gap-2">
-                    <RefreshCw size={14} /> Gerar PIN aleatório
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => toggle(s)} className="gap-2">
-                    {s.active ? "Desativar loja" : "Ativar loja"}
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => remove(s)} className="gap-2 text-destructive focus:text-destructive">
                     <Trash2 size={14} /> Excluir
                   </DropdownMenuItem>
