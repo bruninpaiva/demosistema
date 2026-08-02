@@ -166,9 +166,11 @@ function AdminPage() {
   const [perRepFocusId, setPerRepFocusId] = useState<string | undefined>(undefined);
   const [teamTabFocusStoreId, setTeamTabFocusStoreId] = useState<string | undefined>(undefined);
   const [commissaoFocusImportId, setCommissaoFocusImportId] = useState<string | undefined>(undefined);
+  const [storeFocusId, setStoreFocusId] = useState<string | undefined>(undefined);
   const goToRep = (repId: string) => { setPerRepFocusId(repId); setTab("por-vendedora"); };
   const goToTeamTab = (storeId: string) => { setTeamTabFocusStoreId(storeId); setTab("vendedoras"); };
   const goToCommissao = (importId: string) => { setCommissaoFocusImportId(importId); setTab("comissao"); };
+  const goToStore = (storeId: string) => { setStoreFocusId(storeId); setTab("lojas"); };
   const [authed, setAuthed] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(AUTH_KEY) === "1"
   );
@@ -341,11 +343,11 @@ function AdminPage() {
       </nav>
 
       <main className="mx-auto max-w-6xl p-4 md:p-8">
-        {tab === "dashboard" && <Dashboard />}
+        {tab === "dashboard" && <Dashboard onOpenStore={goToStore} onOpenTab={setTab} />}
         {tab === "por-vendedora" && <PerRepTab initialRepId={perRepFocusId} />}
         {tab === "pausas" && <BreaksTab />}
         {tab === "lojas" && (
-          <StoresTab onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} />
+          <StoresTab initialStoreId={storeFocusId} onOpenRep={goToRep} onOpenTeamTab={goToTeamTab} onOpenCommissao={goToCommissao} />
         )}
         {tab === "vendedoras" && <SalesRepsTab initialStoreId={teamTabFocusStoreId} />}
         {tab === "motivos" && <ReasonsTab />}
@@ -1078,7 +1080,7 @@ function formatAlertTime(iso?: string): string {
 
 const ALERTS_POLL_MS = 60_000;
 
-function useAlerts(stores: Store[], reps: RepOption[]) {
+function useAlertEngine(stores: Store[], reps: RepOption[]) {
   const [todayRows, setTodayRows] = useState<AlertRow[]>([]);
   const [yesterdayRows, setYesterdayRows] = useState<AlertRow[]>([]);
   const [breakRows, setBreakRows] = useState<AlertBreakRow[]>([]);
@@ -1107,7 +1109,7 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
     return () => { alive = false; clearInterval(interval); };
   }, []);
 
-  return useMemo(() => {
+  const alerts = useMemo(() => {
     const alerts: DashboardAlert[] = [];
     const now = new Date();
     const nowIso = now.toISOString();
@@ -1245,6 +1247,12 @@ function useAlerts(stores: Store[], reps: RepOption[]) {
       return severity !== 0 ? severity : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [todayRows, yesterdayRows, breakRows, stores, reps, hours]);
+
+  return { alerts, todayRows, yesterdayRows, breakRows, hours };
+}
+
+function useAlerts(stores: Store[], reps: RepOption[]) {
+  return useAlertEngine(stores, reps).alerts;
 }
 
 function AlertBanner({ alert }: { alert: DashboardAlert }) {
@@ -1569,7 +1577,7 @@ function StoreFilter({ storeId, setStoreId, stores }: { storeId: string; setStor
   );
 }
 
-type RepOption = { id: string; name: string; store_id: string | null; active: boolean };
+type RepOption = { id: string; name: string; store_id: string | null; active: boolean; status?: string; queue_position?: number | null };
 
 function RepFilter({ repId, setRepId, reps, storeId, stores }: {
   repId: string; setRepId: (r: string) => void;
@@ -1629,7 +1637,118 @@ function DateRangeBar({ preset, setPreset, from, setFrom, to, setTo }: {
 
 // ------------ Dashboard ------------
 
-function Dashboard() {
+type StoreHealth = "normal" | "warning" | "critical" | "closed";
+type ExecutiveTimelineEvent = {
+  id: string;
+  title: string;
+  meta: string;
+  createdAt: string;
+  tone: "brand" | "success" | "warning" | "critical" | "muted";
+};
+
+function storeHealthFor(store: Store, alerts: DashboardAlert[], hours: StoreOperatingHour[]): StoreHealth {
+  if (getStoreOperationalState(store, hours) !== "open") return "closed";
+  const storeAlerts = alerts.filter((a) => a.storeId === store.id);
+  if (storeAlerts.some((a) => a.severity === "critical")) return "critical";
+  if (storeAlerts.some((a) => a.severity === "warning" || a.severity === "info")) return "warning";
+  return "normal";
+}
+
+function storeHealthLabel(health: StoreHealth): string {
+  return health === "normal" ? "Operando normalmente" : health === "warning" ? "Atencao" : health === "critical" ? "Critica" : "Fechada";
+}
+
+function storeHealthClasses(health: StoreHealth): string {
+  return health === "normal"
+    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
+    : health === "warning"
+      ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+      : health === "critical"
+        ? "bg-destructive/10 text-destructive"
+        : "bg-muted text-muted-foreground";
+}
+
+function storeHealthDot(health: StoreHealth): string {
+  return health === "normal" ? "bg-emerald-500" : health === "warning" ? "bg-amber-500" : health === "critical" ? "bg-destructive" : "bg-muted-foreground";
+}
+
+function formatShortDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function useExecutiveTimeline(stores: Store[], attendances: Attendance[], alerts: DashboardAlert[]) {
+  const [externalEvents, setExternalEvents] = useState<ExecutiveTimelineEvent[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const [{ data: commissions }, { data: promos }] = await Promise.all([
+        supabase.from("commission_imports").select("id,store_id,month,year,created_at").order("created_at", { ascending: false }).limit(5),
+        supabase.from("promo_exports").select("id,file_name,product_count,created_at").order("created_at", { ascending: false }).limit(5),
+      ]);
+      if (!alive) return;
+      const storeName = (id: string | null) => stores.find((s) => s.id === id)?.name ?? "Loja";
+      const commissionEvents = ((commissions ?? []) as { id: string; store_id: string; month: number; year: number; created_at: string }[]).map((item) => ({
+        id: `commission-${item.id}`,
+        title: "Comissao importada",
+        meta: `${storeName(item.store_id)} - ${String(item.month).padStart(2, "0")}/${item.year}`,
+        createdAt: item.created_at,
+        tone: "brand" as const,
+      }));
+      const promoEvents = ((promos ?? []) as { id: string; file_name: string; product_count: number; created_at: string }[]).map((item) => ({
+        id: `promo-${item.id}`,
+        title: "Promocao exportada",
+        meta: `${item.file_name} - ${item.product_count} produtos`,
+        createdAt: item.created_at,
+        tone: "success" as const,
+      }));
+      setExternalEvents([...commissionEvents, ...promoEvents]);
+    };
+    load();
+    return () => { alive = false; };
+  }, [stores]);
+
+  return useMemo(() => {
+    const storeName = (id: string | null) => stores.find((s) => s.id === id)?.name ?? "Loja";
+    const attendanceEvents: ExecutiveTimelineEvent[] = [];
+    const sortedAttendances = [...attendances].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const firstAttendance = sortedAttendances[0];
+    const lastAttendance = sortedAttendances[sortedAttendances.length - 1];
+
+    if (firstAttendance) {
+      attendanceEvents.push({
+        id: `first-attendance-${firstAttendance.id}`,
+        title: "Primeiro atendimento",
+        meta: storeName(firstAttendance.store_id),
+        createdAt: firstAttendance.created_at,
+        tone: "muted",
+      });
+    }
+    if (lastAttendance && lastAttendance.id !== firstAttendance?.id) {
+      attendanceEvents.push({
+        id: `last-attendance-${lastAttendance.id}`,
+        title: "Ultimo atendimento",
+        meta: storeName(lastAttendance.store_id),
+        createdAt: lastAttendance.created_at,
+        tone: "brand",
+      });
+    }
+
+    const alertEvents = alerts.slice(0, 5).map((alert) => ({
+      id: `alert-${alert.id}`,
+      title: "Status operacional",
+      meta: `${alert.title} - ${alert.message}`,
+      createdAt: alert.createdAt,
+      tone: alert.severity === "critical" ? "critical" as const : alert.severity === "warning" ? "warning" as const : "muted" as const,
+    }));
+
+    return [...externalEvents, ...attendanceEvents, ...alertEvents]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 8);
+  }, [externalEvents, attendances, alerts, stores]);
+}
+
+function Dashboard({ onOpenStore, onOpenTab }: { onOpenStore: (storeId: string) => void; onOpenTab: (tab: Tab) => void }) {
   const actor = getAdminActor();
   const [preset, setPreset] = useState<Preset>("hoje");
   const [from, setFrom] = useState("");
@@ -1641,372 +1760,227 @@ function Dashboard() {
   );
   const [repId, setRepId] = useState<string>(ALL_REPS);
   const handleStoreChange = (s: string) => { setStoreId(s); setRepId(ALL_REPS); };
-  const [compareEnabled, setCompareEnabled] = useState(false);
   const { stores } = useStores();
   const { start, end } = useMemo(() => rangeFor(preset, from, to), [preset, from, to]);
   const { data, loading } = useAttendances(start, end, storeId);
-  const previousRange = useMemo(() => previousRangeFor(start, end), [start, end]);
-  const { data: previousData } = useAttendances(previousRange.start, previousRange.end, storeId);
   const [reps, setReps] = useState<RepOption[]>([]);
-  const [reasons, setReasons] = useState<{ id: string; label: string; is_other: boolean }[]>([]);
 
   useEffect(() => {
-    supabase.from("sales_reps").select("id,name,store_id,active").then(({ data }) => setReps((data as RepOption[]) ?? []));
-    supabase.from("no_sale_reasons").select("id,label,is_other").then(({ data }) => setReasons((data as any) ?? []));
+    supabase.from("sales_reps").select("id,name,store_id,active,status,queue_position").then(({ data }) => setReps((data as RepOption[]) ?? []));
   }, []);
 
   const filteredData = useMemo(
     () => (repId === ALL_REPS ? data : data.filter((a) => a.sales_rep_id === repId)),
     [data, repId],
   );
-  const filteredPreviousData = useMemo(
-    () => (repId === ALL_REPS ? previousData : previousData.filter((a) => a.sales_rep_id === repId)),
-    [previousData, repId],
-  );
-
   const metrics = useDashboardMetrics(filteredData);
-  const previousMetrics = useDashboardMetrics(filteredPreviousData);
-  const breakMinutes = useBreakMinutes(start, end, storeId, repId);
-  const previousBreakMinutes = useBreakMinutes(previousRange.start, previousRange.end, storeId, repId);
-
-  // Faturamento/Ticket Médio só existem em Este mês / Personalizado-dentro-de-um-mês,
-  // e só quando a competência daquele mês já tiver comissão importada de verdade.
-  const commissionPeriod = useMemo<MonthYear | null>(() => {
-    if (preset === "mes") {
-      const now = new Date();
-      return { month: now.getMonth() + 1, year: now.getFullYear() };
+  const { alerts, todayRows, breakRows, hours } = useAlertEngine(stores, reps);
+  const storesInScope = useMemo(
+    () => (storeId === ALL_STORES ? stores : stores.filter((s) => s.id === storeId)),
+    [stores, storeId],
+  );
+  const repsInScope = useMemo(
+    () => reps.filter((r) => storeId === ALL_STORES || r.store_id === storeId),
+    [reps, storeId],
+  );
+  const activeBreaksInScope = useMemo(
+    () => breakRows.filter((b) => !b.ended_at && b.reason !== "Fora horario de trabalho" && (storeId === ALL_STORES || b.store_id === storeId)),
+    [breakRows, storeId],
+  );
+  const healthRows = useMemo(
+    () => storesInScope.map((store) => {
+      const storeAlerts = alerts.filter((a) => a.storeId === store.id);
+      const health = storeHealthFor(store, alerts, hours);
+      const rows = filteredData.filter((a) => a.store_id === store.id);
+      const sales = rows.filter((a) => a.type === "sale").length;
+      return {
+        store,
+        health,
+        alertCount: storeAlerts.length,
+        atendimentos: rows.length,
+        conversao: rows.length > 0 ? (sales / rows.length) * 100 : 0,
+      };
+    }),
+    [storesInScope, alerts, hours, filteredData],
+  );
+  const healthSummary = useMemo(
+    () => ({
+      normal: healthRows.filter((r) => r.health === "normal").length,
+      warning: healthRows.filter((r) => r.health === "warning").length,
+      critical: healthRows.filter((r) => r.health === "critical").length,
+      closed: healthRows.filter((r) => r.health === "closed").length,
+    }),
+    [healthRows],
+  );
+  const executiveStoreRanking = useMemo(() => {
+    const map = new Map<string, { name: string; atendimentos: number; vendas: number }>();
+    for (const store of storesInScope) map.set(store.id, { name: store.name, atendimentos: 0, vendas: 0 });
+    for (const attendance of filteredData) {
+      if (!attendance.store_id || !map.has(attendance.store_id)) continue;
+      const current = map.get(attendance.store_id)!;
+      current.atendimentos++;
+      if (attendance.type === "sale") current.vendas++;
     }
-    if (preset === "custom" && from && to) {
-      const f = new Date(from + "T00:00:00");
-      const t = new Date(to + "T00:00:00");
-      if (f.getFullYear() === t.getFullYear() && f.getMonth() === t.getMonth()) {
-        return { month: f.getMonth() + 1, year: f.getFullYear() };
-      }
-    }
-    return null;
-  }, [preset, from, to]);
-
-  const previousMonthYear = useMemo<MonthYear | null>(() => {
-    if (!commissionPeriod) return null;
-    const { month, year } = commissionPeriod;
-    return month === 1 ? { month: 12, year: year - 1 } : { month: month - 1, year };
-  }, [commissionPeriod]);
-
-  const commissionSummary = useCommissionSummary(actor, storeId, stores, commissionPeriod);
-  const previousCommissionSummary = useCommissionSummary(actor, storeId, stores, compareEnabled ? previousMonthYear : null);
-
-  const ranking = useMemo(() => {
-    const map = new Map<string, { atendimentos: number; vendas: number }>();
-    for (const a of filteredData) {
-      const cur = map.get(a.sales_rep_id) ?? { atendimentos: 0, vendas: 0 };
-      cur.atendimentos++;
-      if (a.type === "sale") cur.vendas++;
-      map.set(a.sales_rep_id, cur);
-    }
-    return Array.from(map.entries()).map(([id, v]) => ({
-      name: reps.find((r) => r.id === id)?.name ?? "—",
-      atendimentos: v.atendimentos,
-      vendas: v.vendas,
-      conversao: v.atendimentos > 0 ? (v.vendas / v.atendimentos) * 100 : 0,
-    })).sort((a, b) => b.vendas - a.vendas);
-  }, [filteredData, reps]);
-
-  const reasonChart = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const a of filteredData) {
-      if (a.type !== "no_sale" || !a.reason_id) continue;
-      map.set(a.reason_id, (map.get(a.reason_id) ?? 0) + 1);
-    }
-    return Array.from(map.entries()).map(([id, v]) => ({
-      name: reasons.find((r) => r.id === id)?.label ?? "—",
-      qtd: v,
-    })).sort((a, b) => b.qtd - a.qtd);
-  }, [filteredData, reasons]);
-
-  const [trendMetric, setTrendMetric] = useState<TrendMetric>("atendimentos");
-  const isHourlyTrend = preset === "hoje" || preset === "ontem";
-
-  const trendChart = useMemo(() => {
-    type Bucket = { label: string; atendimentos: number; vendas: number; tempoSomaMin: number; tempoCount: number };
-    const buckets: Bucket[] = [];
-    const byKey = new Map<string, Bucket>();
-    const newBucket = (label: string): Bucket => ({ label, atendimentos: 0, vendas: 0, tempoSomaMin: 0, tempoCount: 0 });
-    const accumulate = (b: Bucket, a: Attendance) => {
-      b.atendimentos++;
-      if (a.type === "sale") b.vendas++;
-      if (a.closed_at) {
-        b.tempoSomaMin += (new Date(a.closed_at).getTime() - new Date(a.created_at).getTime()) / 60000;
-        b.tempoCount++;
-      }
-    };
-
-    if (isHourlyTrend) {
-      for (let h = 8; h <= 22; h++) {
-        const b = newBucket(`${h}h`);
-        buckets.push(b);
-        byKey.set(String(h), b);
-      }
-      for (const a of filteredData) {
-        const h = new Date(a.created_at).getHours();
-        let b = byKey.get(String(h));
-        if (!b) { b = newBucket(`${h}h`); byKey.set(String(h), b); buckets.push(b); }
-        accumulate(b, a);
-      }
-      buckets.sort((x, y) => parseInt(x.label) - parseInt(y.label));
-    } else {
-      const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-      while (cursor <= endDay) {
-        const key = dayKey(cursor);
-        const b = newBucket(dayLabel(cursor));
-        buckets.push(b);
-        byKey.set(key, b);
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      for (const a of filteredData) {
-        const d = new Date(a.created_at);
-        const key = dayKey(d);
-        let b = byKey.get(key);
-        if (!b) { b = newBucket(dayLabel(d)); byKey.set(key, b); buckets.push(b); }
-        accumulate(b, a);
-      }
-    }
-
-    return buckets.map((b) => ({
-      label: b.label,
-      atendimentos: b.atendimentos,
-      conversao: b.atendimentos > 0 ? Math.round((b.vendas / b.atendimentos) * 1000) / 10 : 0,
-      tempoMedio: b.tempoCount > 0 ? Math.round((b.tempoSomaMin / b.tempoCount) * 10) / 10 : 0,
+    return Array.from(map.values()).map((item) => ({
+      ...item,
+      conversao: item.atendimentos > 0 ? (item.vendas / item.atendimentos) * 100 : 0,
     }));
-  }, [filteredData, isHourlyTrend, start, end]);
-
-  // Comparativo entre lojas, na mesma métrica escolhida no gráfico de tendência.
-  // Só faz sentido quando "Todas as lojas" está selecionado — comparar uma loja
-  // com ela mesma não ajuda em nada.
-  const storeRanking = useMemo(() => {
-    if (storeId !== ALL_STORES) return [];
-    const map = new Map<string, { atendimentos: number; vendas: number; tempoSomaMin: number; tempoCount: number }>();
-    for (const a of filteredData) {
-      const sid = a.store_id ?? "sem_loja";
-      const cur = map.get(sid) ?? { atendimentos: 0, vendas: 0, tempoSomaMin: 0, tempoCount: 0 };
-      cur.atendimentos++;
-      if (a.type === "sale") cur.vendas++;
-      if (a.closed_at) {
-        cur.tempoSomaMin += (new Date(a.closed_at).getTime() - new Date(a.created_at).getTime()) / 60000;
-        cur.tempoCount++;
-      }
-      map.set(sid, cur);
-    }
-    return Array.from(map.entries())
-      .map(([sid, v]) => ({
-        name: stores.find((s) => s.id === sid)?.name ?? "—",
-        atendimentos: v.atendimentos,
-        vendas: v.vendas,
-        conversao: v.atendimentos > 0 ? Math.round((v.vendas / v.atendimentos) * 1000) / 10 : 0,
-        tempoMedio: v.tempoCount > 0 ? Math.round((v.tempoSomaMin / v.tempoCount) * 10) / 10 : 0,
-      }))
-      // Tempo médio: menor é melhor (atendimento mais rápido), então ordena crescente;
-      // as outras métricas (atendimentos/conversão): maior é melhor, ordena decrescente.
-      .sort((a, b) => (trendMetric === "tempoMedio" ? a.tempoMedio - b.tempoMedio : b[trendMetric] - a[trendMetric]));
-  }, [filteredData, storeId, stores, trendMetric]);
-
-  // Tabela de ranking (ordenada por vendas, como o ranking de vendedoras já sempre foi)
-  // — diferente do gráfico acima, que ordena pela métrica escolhida na Tendência.
-  const storeRankingTable = useMemo(
-    () => [...storeRanking].sort((a, b) => b.vendas - a.vendas),
-    [storeRanking],
+  }, [filteredData, storesInScope]);
+  const topConversionStores = useMemo(
+    () => [...executiveStoreRanking].filter((r) => r.atendimentos > 0).sort((a, b) => b.conversao - a.conversao).slice(0, 5),
+    [executiveStoreRanking],
+  );
+  const topAttendanceStores = useMemo(
+    () => [...executiveStoreRanking].filter((r) => r.atendimentos > 0).sort((a, b) => b.atendimentos - a.atendimentos).slice(0, 5),
+    [executiveStoreRanking],
+  );
+  const executiveTimeline = useExecutiveTimeline(storesInScope, filteredData, alerts.filter((a) => !a.storeId || storesInScope.some((s) => s.id === a.storeId)));
+  const scopedTodayOpenRows = useMemo(
+    () => todayRows.filter((a) => a.status === "open" && (storeId === ALL_STORES || a.store_id === storeId)),
+    [todayRows, storeId],
   );
 
   return (
-    <div>
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-4">
         <StoreFilter storeId={storeId} setStoreId={handleStoreChange} stores={stores} />
         <RepFilter repId={repId} setRepId={setRepId} reps={reps} storeId={storeId} stores={stores} />
       </div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
-        <label className="mb-6 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <input type="checkbox" checked={compareEnabled} onChange={(e) => setCompareEnabled(e.target.checked)} />
-          Comparar com período anterior
-        </label>
-      </div>
+      <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
 
-      {/* xl (não md): em tablet — retrato ou paisagem — os 4 KPIs ficam 2x2; só desktop de verdade vira uma fileira só. */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {commissionSummary ? (
-          <>
-            <Kpi
-              title="Faturamento"
-              value={formatBRL(commissionSummary.faturamento)}
-              accent="brand"
-              delta={compareEnabled && previousCommissionSummary ? deltaPct(commissionSummary.faturamento, previousCommissionSummary.faturamento) : null}
-            />
-            <Kpi
-              title="Atendimentos"
-              value={metrics.atendimentos}
-              delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
-            />
-            <Kpi
-              title="Conversão"
-              value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`}
-              accent="success"
-              delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
-            />
-            <Kpi
-              title="Ticket médio"
-              value={formatBRL(commissionSummary.ticketMedio)}
-              delta={compareEnabled && previousCommissionSummary ? deltaPct(commissionSummary.ticketMedio, previousCommissionSummary.ticketMedio) : null}
-            />
-          </>
-        ) : (
-          <>
-            <Kpi
-              title="Atendimentos"
-              value={metrics.atendimentos}
-              delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
-            />
-            <Kpi
-              title="Conversão"
-              value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`}
-              accent="success"
-              delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
-            />
-            <Kpi
-              title="Tempo médio de atendimento"
-              value={formatAvgMinutes(metrics.tempoMedioAtendimentoMin)}
-              delta={compareEnabled ? deltaPct(metrics.tempoMedioAtendimentoMin, previousMetrics.tempoMedioAtendimentoMin) : null}
-            />
-            <Kpi
-              title="Minutos em pausa"
-              value={formatMinutes(breakMinutes)}
-              delta={compareEnabled ? deltaPct(breakMinutes, previousBreakMinutes) : null}
-            />
-          </>
-        )}
-      </div>
-      {commissionSummary && commissionSummary.storesWithData < commissionSummary.storesInScope && (
-        <p className="mb-2 mt-2 text-xs text-muted-foreground">
-          Faturamento com dados de {commissionSummary.storesWithData} de {commissionSummary.storesInScope} lojas (comissão ainda não
-          importada para as demais).
-        </p>
-      )}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+        <Kpi title="Lojas ativas" value={storesInScope.filter((s) => s.active).length} />
+        <Kpi title="Vendedoras cadastradas" value={repsInScope.length} />
+        <Kpi title="Em atendimento" value={scopedTodayOpenRows.length} accent="brand" />
+        <Kpi title="Em fila" value={repsInScope.filter((r) => r.active && r.status === "available").length} />
+        <Kpi title="Em pausa" value={activeBreaksInScope.length} />
+        <Kpi title="Conversao media" value={`${metrics.conversao.toFixed(1)}%`} accent="success" />
+        <Kpi title="Atendimentos hoje" value={metrics.atendimentos} />
+      </section>
 
-      <div className="mt-6">
-        <LiveStrip storeId={storeId} />
-      </div>
+      {loading && <p className="text-center text-muted-foreground">Carregando...</p>}
 
-      {loading && <p className="mt-6 text-center text-muted-foreground">Carregando…</p>}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
+        <div className="space-y-6">
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-bold">Situacao das Lojas</h3>
+                <p className="text-sm text-muted-foreground">Status calculado pela Central de Alertas.</p>
+              </div>
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">{alerts.length} alertas ativos</span>
+            </div>
+            {healthRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma loja encontrada.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {healthRows.map((row) => (
+                  <button
+                    key={row.store.id}
+                    onClick={() => onOpenStore(row.store.id)}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition hover:border-brand hover:bg-brand/5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-foreground">{row.store.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {row.atendimentos} atend. - {row.conversao.toFixed(1)}% conversao
+                      </p>
+                    </div>
+                    <span className={`flex shrink-0 items-center gap-2 rounded-full px-2.5 py-1 text-xs font-bold ${storeHealthClasses(row.health)}`}>
+                      <span className={`h-2 w-2 rounded-full ${storeHealthDot(row.health)}`} />
+                      {storeHealthLabel(row.health)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
 
-      {/* xl: em tablet as duas tabelas ficam empilhadas (largura cheia cada uma) em vez de
-          espremidas lado a lado — tabela com várias colunas precisa de espaço. */}
-      <div className={`mt-8 grid grid-cols-1 gap-6 ${storeId === ALL_STORES ? "xl:grid-cols-2" : ""}`}>
-        {storeId === ALL_STORES && (
-          <RankingCard
-            title="Ranking das lojas"
-            nameLabel="Loja"
-            rows={storeRankingTable}
-            emptyLabel="Sem atendimentos no período."
-          />
-        )}
-        <RankingCard
-          title="Ranking das vendedoras"
-          nameLabel="Vendedora"
-          rows={ranking}
-          emptyLabel="Sem atendimentos no período."
-        />
-      </div>
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <h3 className="mb-4 text-lg font-bold">Atividade Recente</h3>
+            {executiveTimeline.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sem atividade recente para exibir.</p>
+            ) : (
+              <div className="space-y-3">
+                {executiveTimeline.map((event) => (
+                  <div key={event.id} className="flex gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
+                    <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                      event.tone === "critical" ? "bg-destructive" : event.tone === "warning" ? "bg-amber-500" : event.tone === "success" ? "bg-success" : event.tone === "brand" ? "bg-brand" : "bg-muted-foreground"
+                    }`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-foreground">{event.title}</p>
+                        <span className="text-xs text-muted-foreground">{formatShortDateTime(event.createdAt)}</span>
+                      </div>
+                      <p className="truncate text-sm text-muted-foreground">{event.meta}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <section className="rounded-2xl bg-card p-5 shadow-sm xl:col-span-2">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-lg font-bold">Tendência</h3>
-            <div className="flex gap-1 rounded-lg bg-muted p-1">
-              {(Object.keys(TREND_METRIC_LABELS) as TrendMetric[]).map((m) => (
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <h3 className="mb-4 text-lg font-bold">Acesso Rapido</h3>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              {[
+                { label: "Lojas", tab: "lojas" as Tab, icon: StoreIcon },
+                { label: "Comissao", tab: "comissao" as Tab, icon: Calculator },
+                { label: "Promocoes", tab: "promocoes" as Tab, icon: Tag },
+                { label: "Vendedoras", tab: "vendedoras" as Tab, icon: Users },
+                { label: "Dashboard Geral", tab: "dashboard" as Tab, icon: LayoutDashboard },
+              ].map(({ label, tab, icon: Icon }) => (
                 <button
-                  key={m}
-                  onClick={() => setTrendMetric(m)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                    trendMetric === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-                  }`}
+                  key={label}
+                  onClick={() => onOpenTab(tab)}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 text-sm font-bold text-foreground transition hover:border-brand hover:bg-brand/5 hover:text-brand"
                 >
-                  {TREND_METRIC_LABELS[m]}
+                  <Icon size={16} /> {label}
                 </button>
               ))}
             </div>
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={trendChart}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
-              <YAxis allowDecimals={trendMetric !== "atendimentos"} />
-              <Tooltip
-                formatter={(value: number) =>
-                  trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : trendMetric === "tempoMedio" ? `${Number(value).toFixed(1)} min` : value
-                }
-              />
-              <Line type="monotone" dataKey={trendMetric} stroke="var(--color-brand)" strokeWidth={3} dot />
-            </LineChart>
-          </ResponsiveContainer>
-        </section>
+          </section>
+        </div>
 
-        <section className="rounded-2xl bg-card p-5 shadow-sm">
-          <h3 className="mb-4 text-lg font-bold">Top motivos de não venda</h3>
-          {reasonChart.length === 0 ? (
-            <p className="text-muted-foreground">Sem dados.</p>
-          ) : (
-            <ul className="space-y-3">
-              {reasonChart.slice(0, 3).map((r) => {
-                const max = reasonChart[0].qtd;
-                const pct = max > 0 ? (r.qtd / max) * 100 : 0;
-                return (
-                  <li key={r.name}>
-                    <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                      <span className="font-medium">{r.name}</span>
-                      <span className="shrink-0 font-semibold text-muted-foreground">{r.qtd}</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-2 rounded-full bg-destructive" style={{ width: `${pct}%` }} />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+        <aside className="space-y-6">
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <h3 className="mb-4 text-lg font-bold">Saude da Operacao</h3>
+            <div className="space-y-3 text-sm">
+              {([
+                ["normal", healthSummary.normal],
+                ["warning", healthSummary.warning],
+                ["critical", healthSummary.critical],
+                ["closed", healthSummary.closed],
+              ] as [StoreHealth, number][]).map(([health, count]) => (
+                <div key={health} className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <span className={`h-2.5 w-2.5 rounded-full ${storeHealthDot(health)}`} />
+                    {storeHealthLabel(health)}
+                  </span>
+                  <span className="font-extrabold text-foreground">{count}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <h3 className="mb-4 text-lg font-bold">Ranking do Dia</h3>
+            <div className="space-y-5">
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Top 5 Conversao</p>
+                <CompactStoreRanking rows={topConversionStores} value={(row) => `${row.conversao.toFixed(0)}%`} />
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Top 5 Atendimentos</p>
+                <CompactStoreRanking rows={topAttendanceStores} value={(row) => String(row.atendimentos)} />
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
-
-      {storeId === ALL_STORES && (
-        <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
-          <h3 className="mb-4 text-lg font-bold">Ranking de lojas — {TREND_METRIC_LABELS[trendMetric]}</h3>
-          {storeRanking.length === 0 ? (
-            <p className="text-muted-foreground">Sem dados no período.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={Math.max(140, storeRanking.length * 60)}>
-              <BarChart data={storeRanking} layout="vertical" margin={{ left: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={trendMetric !== "atendimentos"} />
-                <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 12 }} />
-                <Tooltip
-                  formatter={(value: number) =>
-                    trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : trendMetric === "tempoMedio" ? `${Number(value).toFixed(1)} min` : value
-                  }
-                />
-                <Bar dataKey={trendMetric} fill="var(--color-brand)" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-      )}
-
-      <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
-        <h3 className="font-bold">Insights do BPInfo AI</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Em breve, observações automáticas sobre o desempenho do período — como quedas de conversão, lojas fora do
-          padrão ou vendedoras em destaque.
-        </p>
-      </section>
     </div>
   );
+
 }
 
 function Kpi({ title, value, accent, delta }: { title: string; value: string | number; accent?: "success" | "destructive" | "brand"; delta?: KpiDelta | null }) {
@@ -2022,6 +1996,28 @@ function Kpi({ title, value, accent, delta }: { title: string; value: string | n
           {DeltaIcon && <DeltaIcon size={12} />} {delta.label}
         </p>
       )}
+    </div>
+  );
+}
+
+type CompactStoreRankingRow = { name: string; atendimentos: number; vendas: number; conversao: number };
+
+function CompactStoreRanking({ rows, value }: { rows: CompactStoreRankingRow[]; value: (row: CompactStoreRankingRow) => string }) {
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">Sem dados hoje.</p>;
+  const medals = ["1", "2", "3"];
+  return (
+    <div className="space-y-2">
+      {rows.map((row, index) => (
+        <div key={`${row.name}-${index}`} className="flex items-center justify-between gap-3 border-b border-border pb-2 last:border-0 last:pb-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-extrabold text-muted-foreground">
+              {medals[index] ?? index + 1}
+            </span>
+            <span className="truncate text-sm font-bold text-foreground">{row.name}</span>
+          </div>
+          <span className="shrink-0 text-sm font-extrabold text-brand">{value(row)}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2909,10 +2905,12 @@ function StoreTeamSection({
 }
 
 function StoresTab({
+  initialStoreId,
   onOpenRep,
   onOpenTeamTab,
   onOpenCommissao,
 }: {
+  initialStoreId?: string;
   onOpenRep: (repId: string) => void;
   onOpenTeamTab: (storeId: string) => void;
   onOpenCommissao: (importId: string) => void;
@@ -2922,6 +2920,10 @@ function StoresTab({
   const [pin, setPin] = useState("");
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const { overview, alerts, hours } = useStoreCardsData(stores);
+
+  useEffect(() => {
+    if (initialStoreId) setSelectedStoreId(initialStoreId);
+  }, [initialStoreId]);
 
   const add = async () => {
     if (!name.trim()) return toast.error("Informe o nome");
