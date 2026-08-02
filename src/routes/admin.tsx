@@ -1098,18 +1098,19 @@ function Dashboard() {
   const previousMetrics = useDashboardMetrics(filteredPreviousData);
 
   const ranking = useMemo(() => {
-    const map = new Map<string, { att: number; sales: number }>();
+    const map = new Map<string, { atendimentos: number; vendas: number }>();
     for (const a of filteredData) {
-      const cur = map.get(a.sales_rep_id) ?? { att: 0, sales: 0 };
-      cur.att++;
-      if (a.type === "sale") cur.sales++;
+      const cur = map.get(a.sales_rep_id) ?? { atendimentos: 0, vendas: 0 };
+      cur.atendimentos++;
+      if (a.type === "sale") cur.vendas++;
       map.set(a.sales_rep_id, cur);
     }
     return Array.from(map.entries()).map(([id, v]) => ({
       name: reps.find((r) => r.id === id)?.name ?? "—",
-      att: v.att, sales: v.sales,
-      conv: v.att > 0 ? (v.sales / v.att) * 100 : 0,
-    })).sort((a, b) => b.sales - a.sales);
+      atendimentos: v.atendimentos,
+      vendas: v.vendas,
+      conversao: v.atendimentos > 0 ? (v.vendas / v.atendimentos) * 100 : 0,
+    })).sort((a, b) => b.vendas - a.vendas);
   }, [filteredData, reps]);
 
   const reasonChart = useMemo(() => {
@@ -1228,10 +1229,18 @@ function Dashboard() {
         name: stores.find((s) => s.id === sid)?.name ?? "—",
         faturamento: Math.round(v.faturamento * 100) / 100,
         atendimentos: v.atendimentos,
+        vendas: v.vendas,
         conversao: v.atendimentos > 0 ? Math.round((v.vendas / v.atendimentos) * 1000) / 10 : 0,
       }))
       .sort((a, b) => b[trendMetric] - a[trendMetric]);
   }, [filteredData, storeId, stores, trendMetric]);
+
+  // Tabela de ranking (ordenada por vendas, como o ranking de vendedoras já sempre foi)
+  // — diferente do gráfico acima, que ordena pela métrica escolhida na Tendência.
+  const storeRankingTable = useMemo(
+    () => [...storeRanking].sort((a, b) => b.vendas - a.vendas),
+    [storeRanking],
+  );
 
   return (
     <div>
@@ -1278,37 +1287,22 @@ function Dashboard() {
 
       {loading && <p className="mt-6 text-center text-muted-foreground">Carregando…</p>}
 
-      <section className="mt-8 rounded-2xl bg-card p-5 shadow-sm">
-        <h3 className="mb-4 text-lg font-bold">Ranking das vendedoras</h3>
-        {ranking.length === 0 ? (
-          <p className="text-muted-foreground">Sem atendimentos no período.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">#</th>
-                  <th className="px-3 py-2">Vendedora</th>
-                  <th className="px-3 py-2 text-right">Atendimentos</th>
-                  <th className="px-3 py-2 text-right">Vendas</th>
-                  <th className="px-3 py-2 text-right">Conversão</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ranking.map((r, i) => (
-                  <tr key={r.name + i} className="border-t border-border">
-                    <td className="px-3 py-3 font-semibold">{i + 1}º</td>
-                    <td className="px-3 py-3">{r.name}</td>
-                    <td className="px-3 py-3 text-right">{r.att}</td>
-                    <td className="px-3 py-3 text-right font-semibold">{r.sales}</td>
-                    <td className="px-3 py-3 text-right">{r.conv.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className={`mt-8 grid grid-cols-1 gap-6 ${storeId === ALL_STORES ? "lg:grid-cols-2" : ""}`}>
+        {storeId === ALL_STORES && (
+          <RankingCard
+            title="Ranking das lojas"
+            nameLabel="Loja"
+            rows={storeRankingTable}
+            emptyLabel="Sem atendimentos no período."
+          />
         )}
-      </section>
+        <RankingCard
+          title="Ranking das vendedoras"
+          nameLabel="Vendedora"
+          rows={ranking}
+          emptyLabel="Sem atendimentos no período."
+        />
+      </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="rounded-2xl bg-card p-5 shadow-sm">
@@ -1477,6 +1471,44 @@ function Kpi({ title, value, accent, delta }: { title: string; value: string | n
         </p>
       )}
     </div>
+  );
+}
+
+type RankingRow = { name: string; atendimentos: number; vendas: number; conversao: number };
+
+function RankingCard({ title, nameLabel, rows, emptyLabel }: { title: string; nameLabel: string; rows: RankingRow[]; emptyLabel: string }) {
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <h3 className="mb-4 text-lg font-bold">{title}</h3>
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">#</th>
+                <th className="px-3 py-2">{nameLabel}</th>
+                <th className="px-3 py-2 text-right">Atendimentos</th>
+                <th className="px-3 py-2 text-right">Vendas</th>
+                <th className="px-3 py-2 text-right">Conversão</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.name + i} className="border-t border-border">
+                  <td className="px-3 py-3 font-semibold">{i + 1}º</td>
+                  <td className="px-3 py-3">{r.name}</td>
+                  <td className="px-3 py-3 text-right">{r.atendimentos}</td>
+                  <td className="px-3 py-3 text-right font-semibold">{r.vendas}</td>
+                  <td className="px-3 py-3 text-right">{r.conversao.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
