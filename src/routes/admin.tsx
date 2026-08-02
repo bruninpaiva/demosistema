@@ -88,6 +88,7 @@ export function getAdminActor(): { user: string; pass: string; role: string; sto
 }
 
 const ALL_STORES = "__all__";
+const ALL_REPS = "__all__";
 
 function AdminPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -803,6 +804,33 @@ function rangeFor(preset: Preset, from?: string, to?: string): { start: Date; en
   return { start: s, end: e, label: "Personalizado" };
 }
 
+// Período de comparação: mesma duração do período selecionado, imediatamente anterior a ele.
+// Ex.: "Hoje" compara com "Ontem"; "Últimos 7 dias" compara com os 7 dias anteriores a esses.
+function previousRangeFor(start: Date, end: Date): { start: Date; end: Date } {
+  const durationMs = end.getTime() - start.getTime();
+  const prevEnd = new Date(start.getTime() - 1);
+  const prevStart = new Date(prevEnd.getTime() - durationMs);
+  return { start: prevStart, end: prevEnd };
+}
+
+type KpiDelta = { direction: "up" | "down" | "flat"; label: string };
+
+function deltaPct(current: number, previous: number): KpiDelta {
+  if (previous === 0) {
+    if (current === 0) return { direction: "flat", label: "sem mudança vs. período anterior" };
+    return { direction: "up", label: "novo vs. período anterior (era 0)" };
+  }
+  const pct = ((current - previous) / previous) * 100;
+  const direction = pct > 0.5 ? "up" : pct < -0.5 ? "down" : "flat";
+  return { direction, label: `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% vs. período anterior` };
+}
+
+function deltaPontosPercentuais(current: number, previous: number): KpiDelta {
+  const diff = current - previous;
+  const direction = diff > 0.5 ? "up" : diff < -0.5 ? "down" : "flat";
+  return { direction, label: `${diff > 0 ? "+" : ""}${diff.toFixed(1)}pp vs. período anterior` };
+}
+
 type Attendance = {
   id: string;
   created_at: string;
@@ -891,6 +919,38 @@ function StoreFilter({ storeId, setStoreId, stores }: { storeId: string; setStor
   );
 }
 
+type RepOption = { id: string; name: string; store_id: string | null; active: boolean };
+
+function RepFilter({ repId, setRepId, reps, storeId, stores }: {
+  repId: string; setRepId: (r: string) => void;
+  reps: RepOption[]; storeId: string; stores: Store[];
+}) {
+  const options = useMemo(() => {
+    const filtered = reps.filter((r) => r.active && (storeId === ALL_STORES || r.store_id === storeId));
+    return filtered.map((r) => {
+      if (storeId !== ALL_STORES) return { id: r.id, label: r.name };
+      const storeName = stores.find((s) => s.id === r.store_id)?.name;
+      return { id: r.id, label: storeName ? `${r.name} (${storeName})` : r.name };
+    });
+  }, [reps, storeId, stores]);
+
+  return (
+    <div className="mb-4 flex items-center gap-2">
+      <UserSearch size={18} className="text-brand" />
+      <select
+        value={repId}
+        onChange={(e) => setRepId(e.target.value)}
+        className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold"
+      >
+        <option value={ALL_REPS}>Todas as vendedoras</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>{o.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function DateRangeBar({ preset, setPreset, from, setFrom, to, setTo }: {
   preset: Preset; setPreset: (p: Preset) => void;
   from: string; setFrom: (s: string) => void;
@@ -929,22 +989,37 @@ function Dashboard() {
   const [storeId, setStoreId] = useState<string>(() =>
     actor && actor.role === "gerente" && actor.storeId ? actor.storeId : ALL_STORES,
   );
+  const [repId, setRepId] = useState<string>(ALL_REPS);
+  const handleStoreChange = (s: string) => { setStoreId(s); setRepId(ALL_REPS); };
+  const [compareEnabled, setCompareEnabled] = useState(false);
   const { stores } = useStores();
   const { start, end } = useMemo(() => rangeFor(preset, from, to), [preset, from, to]);
   const { data, loading } = useAttendances(start, end, storeId);
-  const [reps, setReps] = useState<{ id: string; name: string }[]>([]);
+  const previousRange = useMemo(() => previousRangeFor(start, end), [start, end]);
+  const { data: previousData } = useAttendances(previousRange.start, previousRange.end, storeId);
+  const [reps, setReps] = useState<RepOption[]>([]);
   const [reasons, setReasons] = useState<{ id: string; label: string; is_other: boolean }[]>([]);
 
   useEffect(() => {
-    supabase.from("sales_reps").select("id,name").then(({ data }) => setReps(data ?? []));
+    supabase.from("sales_reps").select("id,name,store_id,active").then(({ data }) => setReps((data as RepOption[]) ?? []));
     supabase.from("no_sale_reasons").select("id,label,is_other").then(({ data }) => setReasons((data as any) ?? []));
   }, []);
 
-  const metrics = useDashboardMetrics(data);
+  const filteredData = useMemo(
+    () => (repId === ALL_REPS ? data : data.filter((a) => a.sales_rep_id === repId)),
+    [data, repId],
+  );
+  const filteredPreviousData = useMemo(
+    () => (repId === ALL_REPS ? previousData : previousData.filter((a) => a.sales_rep_id === repId)),
+    [previousData, repId],
+  );
+
+  const metrics = useDashboardMetrics(filteredData);
+  const previousMetrics = useDashboardMetrics(filteredPreviousData);
 
   const ranking = useMemo(() => {
     const map = new Map<string, { att: number; sales: number }>();
-    for (const a of data) {
+    for (const a of filteredData) {
       const cur = map.get(a.sales_rep_id) ?? { att: 0, sales: 0 };
       cur.att++;
       if (a.type === "sale") cur.sales++;
@@ -955,11 +1030,11 @@ function Dashboard() {
       att: v.att, sales: v.sales,
       conv: v.att > 0 ? (v.sales / v.att) * 100 : 0,
     })).sort((a, b) => b.sales - a.sales);
-  }, [data, reps]);
+  }, [filteredData, reps]);
 
   const reasonChart = useMemo(() => {
     const map = new Map<string, number>();
-    for (const a of data) {
+    for (const a of filteredData) {
       if (a.type !== "no_sale" || !a.reason_id) continue;
       map.set(a.reason_id, (map.get(a.reason_id) ?? 0) + 1);
     }
@@ -967,10 +1042,10 @@ function Dashboard() {
       name: reasons.find((r) => r.id === id)?.label ?? "—",
       qtd: v,
     })).sort((a, b) => b.qtd - a.qtd);
-  }, [data, reasons]);
+  }, [filteredData, reasons]);
 
   const noSaleDetails = useMemo(() => {
-    return data
+    return filteredData
       .filter((a) => a.type === "no_sale")
       .map((a) => {
         const reason = reasons.find((r) => r.id === a.reason_id);
@@ -984,7 +1059,7 @@ function Dashboard() {
           description: a.reason_other_text ?? "",
         };
       });
-  }, [data, reasons, reps]);
+  }, [filteredData, reasons, reps]);
 
   const noSaleByRep = useMemo(() => {
     const map = new Map<string, { rep: string; total: number; reasons: Map<string, number>; others: string[] }>();
@@ -1008,25 +1083,52 @@ function Dashboard() {
   const hourlyChart = useMemo(() => {
     const map = new Map<number, { hour: number; vendas: number; naovendas: number }>();
     for (let h = 8; h <= 22; h++) map.set(h, { hour: h, vendas: 0, naovendas: 0 });
-    for (const a of data) {
+    for (const a of filteredData) {
       const h = new Date(a.created_at).getHours();
       if (!map.has(h)) map.set(h, { hour: h, vendas: 0, naovendas: 0 });
       const cur = map.get(h)!;
       if (a.type === "sale") cur.vendas++; else cur.naovendas++;
     }
     return Array.from(map.values()).sort((a, b) => a.hour - b.hour).map((v) => ({ ...v, hour: `${v.hour}h` }));
-  }, [data]);
+  }, [filteredData]);
 
   return (
     <div>
-      <StoreFilter storeId={storeId} setStoreId={setStoreId} stores={stores} />
-      <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
+      <div className="flex flex-wrap items-center gap-4">
+        <StoreFilter storeId={storeId} setStoreId={handleStoreChange} stores={stores} />
+        <RepFilter repId={repId} setRepId={setRepId} reps={reps} storeId={storeId} stores={stores} />
+      </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
+        <label className="mb-6 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <input type="checkbox" checked={compareEnabled} onChange={(e) => setCompareEnabled(e.target.checked)} />
+          Comparar com período anterior
+        </label>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi title="Faturamento" value={formatBRL(metrics.faturamento)} accent="brand" />
-        <Kpi title="Atendimentos" value={metrics.atendimentos} />
-        <Kpi title="Conversão" value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`} accent="success" />
-        <Kpi title="Ticket médio" value={formatBRL(metrics.ticketMedio)} />
+        <Kpi
+          title="Faturamento"
+          value={formatBRL(metrics.faturamento)}
+          accent="brand"
+          delta={compareEnabled ? deltaPct(metrics.faturamento, previousMetrics.faturamento) : null}
+        />
+        <Kpi
+          title="Atendimentos"
+          value={metrics.atendimentos}
+          delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
+        />
+        <Kpi
+          title="Conversão"
+          value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`}
+          accent="success"
+          delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
+        />
+        <Kpi
+          title="Ticket médio"
+          value={formatBRL(metrics.ticketMedio)}
+          delta={compareEnabled ? deltaPct(metrics.ticketMedio, previousMetrics.ticketMedio) : null}
+        />
       </div>
 
       {loading && <p className="mt-6 text-center text-muted-foreground">Carregando…</p>}
@@ -1175,12 +1277,19 @@ function Dashboard() {
   );
 }
 
-function Kpi({ title, value, accent }: { title: string; value: string | number; accent?: "success" | "destructive" | "brand" }) {
+function Kpi({ title, value, accent, delta }: { title: string; value: string | number; accent?: "success" | "destructive" | "brand"; delta?: KpiDelta | null }) {
   const color = accent === "success" ? "text-success" : accent === "destructive" ? "text-destructive" : accent === "brand" ? "text-brand" : "text-foreground";
+  const deltaColor = delta?.direction === "up" ? "text-success" : delta?.direction === "down" ? "text-destructive" : "text-muted-foreground";
+  const DeltaIcon = delta?.direction === "up" ? ArrowUp : delta?.direction === "down" ? ArrowDown : null;
   return (
     <div className="rounded-2xl bg-card p-4 shadow-sm">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
       <p className={`mt-1 text-2xl font-extrabold ${color}`}>{value}</p>
+      {delta && (
+        <p className={`mt-1 flex items-center gap-1 text-xs font-semibold ${deltaColor}`}>
+          {DeltaIcon && <DeltaIcon size={12} />} {delta.label}
+        </p>
+      )}
     </div>
   );
 }
