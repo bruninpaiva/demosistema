@@ -873,6 +873,72 @@ function useAttendances(start: Date, end: Date, storeId: string) {
   return { data, loading };
 }
 
+const LIVE_POLL_MS = 30_000;
+
+// "Agora mesmo": atendimentos em aberto e vendedoras em pausa, atualizado por
+// polling (não há Supabase Realtime em uso hoje em nenhum lugar do app — 30s
+// segue a mesma cadência já usada no kiosk da loja para o cronômetro de pausa).
+function useLiveStatus(storeId: string) {
+  const [emAtendimento, setEmAtendimento] = useState(0);
+  const [emPausa, setEmPausa] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      let attQuery = supabase.from("attendances").select("id", { count: "exact", head: true }).eq("status", "open");
+      if (storeId !== ALL_STORES) attQuery = attQuery.eq("store_id", storeId);
+      let breakQuery = supabase.from("rep_breaks").select("id,reason,store_id").is("ended_at", null);
+      if (storeId !== ALL_STORES) breakQuery = breakQuery.eq("store_id", storeId);
+
+      const [{ count: attCount }, { data: breakRows }] = await Promise.all([attQuery, breakQuery]);
+      if (!alive) return;
+      setEmAtendimento(attCount ?? 0);
+      setEmPausa(((breakRows ?? []) as { reason: string | null }[]).filter((b) => b.reason !== "Fora horário de trabalho").length);
+      setUpdatedAt(Date.now());
+    };
+    load();
+    const interval = setInterval(load, LIVE_POLL_MS);
+    return () => { alive = false; clearInterval(interval); };
+  }, [storeId]);
+
+  return { emAtendimento, emPausa, updatedAt };
+}
+
+function LiveStrip({ storeId }: { storeId: string }) {
+  const { emAtendimento, emPausa, updatedAt } = useLiveStatus(storeId);
+  const [, forceTick] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => forceTick((v) => v + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const secondsAgo = updatedAt !== null ? Math.max(0, Math.floor((Date.now() - updatedAt) / 1000)) : null;
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-5 rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-success" />
+        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Ao vivo</span>
+      </div>
+      <div className="flex items-center gap-2 text-sm">
+        <Users size={16} className="text-brand" />
+        <span className="font-bold">{emAtendimento}</span>
+        <span className="text-muted-foreground">em atendimento agora</span>
+      </div>
+      <div className="flex items-center gap-2 text-sm">
+        <Coffee size={16} className="text-amber-600" />
+        <span className="font-bold">{emPausa}</span>
+        <span className="text-muted-foreground">em pausa agora</span>
+      </div>
+      {secondsAgo !== null && (
+        <span className="ml-auto text-xs text-muted-foreground">Atualizado há {secondsAgo}s</span>
+      )}
+    </div>
+  );
+}
+
 type DashboardMetrics = {
   atendimentos: number;
   vendas: number;
@@ -1204,6 +1270,10 @@ function Dashboard() {
           value={formatBRL(metrics.ticketMedio)}
           delta={compareEnabled ? deltaPct(metrics.ticketMedio, previousMetrics.ticketMedio) : null}
         />
+      </div>
+
+      <div className="mt-6">
+        <LiveStrip storeId={storeId} />
       </div>
 
       {loading && <p className="mt-6 text-center text-muted-foreground">Carregando…</p>}
