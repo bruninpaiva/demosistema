@@ -845,6 +845,30 @@ function useAttendances(start: Date, end: Date, storeId: string) {
   return { data, loading };
 }
 
+type DashboardMetrics = {
+  atendimentos: number;
+  vendas: number;
+  naoVendas: number;
+  faturamento: number;
+  conversao: number;
+  ticketMedio: number;
+};
+
+function computeDashboardMetrics(data: Attendance[]): DashboardMetrics {
+  const atendimentos = data.length;
+  const vendasRows = data.filter((a) => a.type === "sale");
+  const vendas = vendasRows.length;
+  const naoVendas = atendimentos - vendas;
+  const faturamento = vendasRows.reduce((sum, a) => sum + (a.amount ?? 0), 0);
+  const conversao = atendimentos > 0 ? (vendas / atendimentos) * 100 : 0;
+  const ticketMedio = vendas > 0 ? faturamento / vendas : 0;
+  return { atendimentos, vendas, naoVendas, faturamento, conversao, ticketMedio };
+}
+
+function useDashboardMetrics(data: Attendance[]): DashboardMetrics {
+  return useMemo(() => computeDashboardMetrics(data), [data]);
+}
+
 function StoreFilter({ storeId, setStoreId, stores }: { storeId: string; setStoreId: (s: string) => void; stores: Store[] }) {
   return (
     <div className="mb-4 flex items-center gap-2">
