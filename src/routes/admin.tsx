@@ -1233,11 +1233,91 @@ function useBreakMinutes(start: Date, end: Date, storeId: string, repId: string)
   return minutes;
 }
 
-type TrendMetric = "faturamento" | "atendimentos" | "conversao";
+// Faturamento/Ticket Médio reais só existem via comissão importada
+// (commission_rows.liquido) — ver Revisão de produto no plano do Dashboard.
+type MonthYear = { month: number; year: number };
+type CommissionScope = {
+  faturamento: number;
+  vendas: number;
+  ticketMedio: number;
+  storesWithData: number;
+  storesInScope: number;
+};
+
+function useCommissionSummary(
+  actor: { user: string; pass: string } | null,
+  storeId: string,
+  stores: Store[],
+  monthYear: MonthYear | null,
+): CommissionScope | null {
+  const [summary, setSummary] = useState<CommissionScope | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!actor || !monthYear || stores.length === 0) {
+      setSummary(null);
+      return;
+    }
+    (async () => {
+      const { data: imports, error } = await supabase.rpc("list_commission_imports", {
+        _actor: actor.user,
+        _actor_password: actor.pass,
+      });
+      if (!alive) return;
+      if (error) {
+        setSummary(null);
+        return;
+      }
+      const scopeIds = storeId === ALL_STORES ? stores.map((s) => s.id) : [storeId];
+      const matching = ((imports ?? []) as { id: string; store_id: string; month: number; year: number }[]).filter(
+        (i) => i.month === monthYear.month && i.year === monthYear.year && scopeIds.includes(i.store_id),
+      );
+      if (matching.length === 0) {
+        setSummary(null);
+        return;
+      }
+      const results = await Promise.all(
+        matching.map((i) => supabase.rpc("get_commission_summary", { _actor: actor.user, _actor_password: actor.pass, _import_id: i.id })),
+      );
+      if (!alive) return;
+      // "Importada de verdade" = tem commission_rows associados (funcionarias > 0),
+      // não só a competência existir (uma "Nova competência" sem upload já cria a linha).
+      const valid = results
+        .map((r) => r.data as { totals?: { liquido?: number; vendas?: number; funcionarias?: number } } | null)
+        .filter((r): r is { totals: { liquido: number; vendas: number; funcionarias: number } } =>
+          Boolean(r?.totals && Number(r.totals.funcionarias) > 0),
+        );
+      if (valid.length === 0) {
+        setSummary(null);
+        return;
+      }
+      const faturamento = valid.reduce((s, r) => s + Number(r.totals.liquido || 0), 0);
+      const vendas = valid.reduce((s, r) => s + Number(r.totals.vendas || 0), 0);
+      setSummary({
+        faturamento,
+        vendas,
+        ticketMedio: vendas > 0 ? faturamento / vendas : 0,
+        storesWithData: valid.length,
+        storesInScope: scopeIds.length,
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actor?.user, actor?.pass, storeId, stores, monthYear?.month, monthYear?.year]);
+
+  return summary;
+}
+
+// "Faturamento" nunca entra aqui: comissão é um número por mês inteiro, sem
+// granularidade diária — não existe "tendência de faturamento" possível em
+// nenhum período, não só nos curtos (ver Revisão de produto no plano).
+type TrendMetric = "atendimentos" | "conversao" | "tempoMedio";
 const TREND_METRIC_LABELS: Record<TrendMetric, string> = {
-  faturamento: "Faturamento",
   atendimentos: "Atendimentos",
   conversao: "Conversão",
+  tempoMedio: "Tempo médio",
 };
 
 function dayKey(d: Date): string {
@@ -1365,6 +1445,32 @@ function Dashboard() {
   const breakMinutes = useBreakMinutes(start, end, storeId, repId);
   const previousBreakMinutes = useBreakMinutes(previousRange.start, previousRange.end, storeId, repId);
 
+  // Faturamento/Ticket Médio só existem em Este mês / Personalizado-dentro-de-um-mês,
+  // e só quando a competência daquele mês já tiver comissão importada de verdade.
+  const commissionPeriod = useMemo<MonthYear | null>(() => {
+    if (preset === "mes") {
+      const now = new Date();
+      return { month: now.getMonth() + 1, year: now.getFullYear() };
+    }
+    if (preset === "custom" && from && to) {
+      const f = new Date(from + "T00:00:00");
+      const t = new Date(to + "T00:00:00");
+      if (f.getFullYear() === t.getFullYear() && f.getMonth() === t.getMonth()) {
+        return { month: f.getMonth() + 1, year: f.getFullYear() };
+      }
+    }
+    return null;
+  }, [preset, from, to]);
+
+  const previousMonthYear = useMemo<MonthYear | null>(() => {
+    if (!commissionPeriod) return null;
+    const { month, year } = commissionPeriod;
+    return month === 1 ? { month: 12, year: year - 1 } : { month: month - 1, year };
+  }, [commissionPeriod]);
+
+  const commissionSummary = useCommissionSummary(actor, storeId, stores, commissionPeriod);
+  const previousCommissionSummary = useCommissionSummary(actor, storeId, stores, compareEnabled ? previousMonthYear : null);
+
   const allAlerts = useAlerts(stores, reps);
   const visibleAlerts = useMemo(
     () => (storeId === ALL_STORES ? allAlerts : allAlerts.filter((a) => a.storeId === storeId || a.storeId === null)),
@@ -1399,26 +1505,34 @@ function Dashboard() {
     })).sort((a, b) => b.qtd - a.qtd);
   }, [filteredData, reasons]);
 
-  const [trendMetric, setTrendMetric] = useState<TrendMetric>("faturamento");
+  const [trendMetric, setTrendMetric] = useState<TrendMetric>("atendimentos");
   const isHourlyTrend = preset === "hoje" || preset === "ontem";
 
   const trendChart = useMemo(() => {
-    type Bucket = { label: string; faturamento: number; atendimentos: number; vendas: number };
+    type Bucket = { label: string; atendimentos: number; vendas: number; tempoSomaMin: number; tempoCount: number };
     const buckets: Bucket[] = [];
     const byKey = new Map<string, Bucket>();
+    const newBucket = (label: string): Bucket => ({ label, atendimentos: 0, vendas: 0, tempoSomaMin: 0, tempoCount: 0 });
+    const accumulate = (b: Bucket, a: Attendance) => {
+      b.atendimentos++;
+      if (a.type === "sale") b.vendas++;
+      if (a.closed_at) {
+        b.tempoSomaMin += (new Date(a.closed_at).getTime() - new Date(a.created_at).getTime()) / 60000;
+        b.tempoCount++;
+      }
+    };
 
     if (isHourlyTrend) {
       for (let h = 8; h <= 22; h++) {
-        const b: Bucket = { label: `${h}h`, faturamento: 0, atendimentos: 0, vendas: 0 };
+        const b = newBucket(`${h}h`);
         buckets.push(b);
         byKey.set(String(h), b);
       }
       for (const a of filteredData) {
         const h = new Date(a.created_at).getHours();
         let b = byKey.get(String(h));
-        if (!b) { b = { label: `${h}h`, faturamento: 0, atendimentos: 0, vendas: 0 }; byKey.set(String(h), b); buckets.push(b); }
-        b.atendimentos++;
-        if (a.type === "sale") { b.vendas++; b.faturamento += a.amount ?? 0; }
+        if (!b) { b = newBucket(`${h}h`); byKey.set(String(h), b); buckets.push(b); }
+        accumulate(b, a);
       }
       buckets.sort((x, y) => parseInt(x.label) - parseInt(y.label));
     } else {
@@ -1426,7 +1540,7 @@ function Dashboard() {
       const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
       while (cursor <= endDay) {
         const key = dayKey(cursor);
-        const b: Bucket = { label: dayLabel(cursor), faturamento: 0, atendimentos: 0, vendas: 0 };
+        const b = newBucket(dayLabel(cursor));
         buckets.push(b);
         byKey.set(key, b);
         cursor.setDate(cursor.getDate() + 1);
@@ -1435,17 +1549,16 @@ function Dashboard() {
         const d = new Date(a.created_at);
         const key = dayKey(d);
         let b = byKey.get(key);
-        if (!b) { b = { label: dayLabel(d), faturamento: 0, atendimentos: 0, vendas: 0 }; byKey.set(key, b); buckets.push(b); }
-        b.atendimentos++;
-        if (a.type === "sale") { b.vendas++; b.faturamento += a.amount ?? 0; }
+        if (!b) { b = newBucket(dayLabel(d)); byKey.set(key, b); buckets.push(b); }
+        accumulate(b, a);
       }
     }
 
     return buckets.map((b) => ({
       label: b.label,
-      faturamento: Math.round(b.faturamento * 100) / 100,
       atendimentos: b.atendimentos,
       conversao: b.atendimentos > 0 ? Math.round((b.vendas / b.atendimentos) * 1000) / 10 : 0,
+      tempoMedio: b.tempoCount > 0 ? Math.round((b.tempoSomaMin / b.tempoCount) * 10) / 10 : 0,
     }));
   }, [filteredData, isHourlyTrend, start, end]);
 
@@ -1454,23 +1567,29 @@ function Dashboard() {
   // com ela mesma não ajuda em nada.
   const storeRanking = useMemo(() => {
     if (storeId !== ALL_STORES) return [];
-    const map = new Map<string, { faturamento: number; atendimentos: number; vendas: number }>();
+    const map = new Map<string, { atendimentos: number; vendas: number; tempoSomaMin: number; tempoCount: number }>();
     for (const a of filteredData) {
       const sid = a.store_id ?? "sem_loja";
-      const cur = map.get(sid) ?? { faturamento: 0, atendimentos: 0, vendas: 0 };
+      const cur = map.get(sid) ?? { atendimentos: 0, vendas: 0, tempoSomaMin: 0, tempoCount: 0 };
       cur.atendimentos++;
-      if (a.type === "sale") { cur.vendas++; cur.faturamento += a.amount ?? 0; }
+      if (a.type === "sale") cur.vendas++;
+      if (a.closed_at) {
+        cur.tempoSomaMin += (new Date(a.closed_at).getTime() - new Date(a.created_at).getTime()) / 60000;
+        cur.tempoCount++;
+      }
       map.set(sid, cur);
     }
     return Array.from(map.entries())
       .map(([sid, v]) => ({
         name: stores.find((s) => s.id === sid)?.name ?? "—",
-        faturamento: Math.round(v.faturamento * 100) / 100,
         atendimentos: v.atendimentos,
         vendas: v.vendas,
         conversao: v.atendimentos > 0 ? Math.round((v.vendas / v.atendimentos) * 1000) / 10 : 0,
+        tempoMedio: v.tempoCount > 0 ? Math.round((v.tempoSomaMin / v.tempoCount) * 10) / 10 : 0,
       }))
-      .sort((a, b) => b[trendMetric] - a[trendMetric]);
+      // Tempo médio: menor é melhor (atendimento mais rápido), então ordena crescente;
+      // as outras métricas (atendimentos/conversão): maior é melhor, ordena decrescente.
+      .sort((a, b) => (trendMetric === "tempoMedio" ? a.tempoMedio - b.tempoMedio : b[trendMetric] - a[trendMetric]));
   }, [filteredData, storeId, stores, trendMetric]);
 
   // Tabela de ranking (ordenada por vendas, como o ranking de vendedoras já sempre foi)
@@ -1504,28 +1623,63 @@ function Dashboard() {
 
       {/* xl (não md): em tablet — retrato ou paisagem — os 4 KPIs ficam 2x2; só desktop de verdade vira uma fileira só. */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Kpi
-          title="Atendimentos"
-          value={metrics.atendimentos}
-          delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
-        />
-        <Kpi
-          title="Conversão"
-          value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`}
-          accent="success"
-          delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
-        />
-        <Kpi
-          title="Tempo médio de atendimento"
-          value={formatAvgMinutes(metrics.tempoMedioAtendimentoMin)}
-          delta={compareEnabled ? deltaPct(metrics.tempoMedioAtendimentoMin, previousMetrics.tempoMedioAtendimentoMin) : null}
-        />
-        <Kpi
-          title="Minutos em pausa"
-          value={formatMinutes(breakMinutes)}
-          delta={compareEnabled ? deltaPct(breakMinutes, previousBreakMinutes) : null}
-        />
+        {commissionSummary ? (
+          <>
+            <Kpi
+              title="Faturamento"
+              value={formatBRL(commissionSummary.faturamento)}
+              accent="brand"
+              delta={compareEnabled && previousCommissionSummary ? deltaPct(commissionSummary.faturamento, previousCommissionSummary.faturamento) : null}
+            />
+            <Kpi
+              title="Atendimentos"
+              value={metrics.atendimentos}
+              delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
+            />
+            <Kpi
+              title="Conversão"
+              value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`}
+              accent="success"
+              delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
+            />
+            <Kpi
+              title="Ticket médio"
+              value={formatBRL(commissionSummary.ticketMedio)}
+              delta={compareEnabled && previousCommissionSummary ? deltaPct(commissionSummary.ticketMedio, previousCommissionSummary.ticketMedio) : null}
+            />
+          </>
+        ) : (
+          <>
+            <Kpi
+              title="Atendimentos"
+              value={metrics.atendimentos}
+              delta={compareEnabled ? deltaPct(metrics.atendimentos, previousMetrics.atendimentos) : null}
+            />
+            <Kpi
+              title="Conversão"
+              value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`}
+              accent="success"
+              delta={compareEnabled ? deltaPontosPercentuais(metrics.conversao, previousMetrics.conversao) : null}
+            />
+            <Kpi
+              title="Tempo médio de atendimento"
+              value={formatAvgMinutes(metrics.tempoMedioAtendimentoMin)}
+              delta={compareEnabled ? deltaPct(metrics.tempoMedioAtendimentoMin, previousMetrics.tempoMedioAtendimentoMin) : null}
+            />
+            <Kpi
+              title="Minutos em pausa"
+              value={formatMinutes(breakMinutes)}
+              delta={compareEnabled ? deltaPct(breakMinutes, previousBreakMinutes) : null}
+            />
+          </>
+        )}
       </div>
+      {commissionSummary && commissionSummary.storesWithData < commissionSummary.storesInScope && (
+        <p className="mb-2 mt-2 text-xs text-muted-foreground">
+          Faturamento com dados de {commissionSummary.storesWithData} de {commissionSummary.storesInScope} lojas (comissão ainda não
+          importada para as demais).
+        </p>
+      )}
 
       <div className="mt-6">
         <LiveStrip storeId={storeId} />
@@ -1577,7 +1731,7 @@ function Dashboard() {
               <YAxis allowDecimals={trendMetric !== "atendimentos"} />
               <Tooltip
                 formatter={(value: number) =>
-                  trendMetric === "faturamento" ? formatBRL(Number(value)) : trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : value
+                  trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : trendMetric === "tempoMedio" ? `${Number(value).toFixed(1)} min` : value
                 }
               />
               <Line type="monotone" dataKey={trendMetric} stroke="var(--color-brand)" strokeWidth={3} dot />
@@ -1624,7 +1778,7 @@ function Dashboard() {
                 <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 12 }} />
                 <Tooltip
                   formatter={(value: number) =>
-                    trendMetric === "faturamento" ? formatBRL(Number(value)) : trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : value
+                    trendMetric === "conversao" ? `${Number(value).toFixed(1)}%` : trendMetric === "tempoMedio" ? `${Number(value).toFixed(1)} min` : value
                   }
                 />
                 <Bar dataKey={trendMetric} fill="var(--color-brand)" radius={[0, 6, 6, 0]} />
