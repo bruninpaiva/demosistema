@@ -68,6 +68,7 @@ const ACTOR_USER_KEY = "lupo_admin_user";
 const ACTOR_PASS_KEY = "lupo_admin_pass";
 const ACTOR_NAME_KEY = "lupo_admin_name";
 const ACTOR_ROLE_KEY = "lupo_admin_role";
+const ACTOR_STORE_KEY = "lupo_admin_store";
 const MUST_CHANGE_KEY = "lupo_admin_must_change";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -76,12 +77,14 @@ const ROLE_LABELS: Record<string, string> = {
   gerente: "Gerente",
 };
 
-export function getAdminActor(): { user: string; pass: string } | null {
+export function getAdminActor(): { user: string; pass: string; role: string; storeId: string | null } | null {
   if (typeof window === "undefined") return null;
   const user = sessionStorage.getItem(ACTOR_USER_KEY);
   const pass = sessionStorage.getItem(ACTOR_PASS_KEY);
   if (!user || !pass) return null;
-  return { user, pass };
+  const role = sessionStorage.getItem(ACTOR_ROLE_KEY) ?? "";
+  const storeId = sessionStorage.getItem(ACTOR_STORE_KEY) || null;
+  return { user, pass, role, storeId };
 }
 
 const ALL_STORES = "__all__";
@@ -121,6 +124,7 @@ function AdminPage() {
     sessionStorage.removeItem(ACTOR_PASS_KEY);
     sessionStorage.removeItem(ACTOR_NAME_KEY);
     sessionStorage.removeItem(ACTOR_ROLE_KEY);
+    sessionStorage.removeItem(ACTOR_STORE_KEY);
     sessionStorage.removeItem(MUST_CHANGE_KEY);
     window.dispatchEvent(new Event("lupo-admin-auth-changed"));
     // Navegação real (não só troca de estado do React): garante uma entrada
@@ -329,6 +333,7 @@ function AdminLogin({ onOk }: { onOk: (requiresPasswordChange: boolean) => void 
     sessionStorage.setItem(ACTOR_PASS_KEY, pass);
     sessionStorage.setItem(ACTOR_NAME_KEY, row.name ?? "");
     sessionStorage.setItem(ACTOR_ROLE_KEY, row.role ?? "");
+    sessionStorage.setItem(ACTOR_STORE_KEY, row.store_id ?? "");
     if (row.must_change_password) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
     window.dispatchEvent(new Event("lupo-admin-auth-changed"));
     supabase.rpc("admin_record_login", { _email: trimmedEmail, _password: pass });
@@ -510,6 +515,7 @@ function AdminBootstrap({ onOk }: { onOk: () => void }) {
     sessionStorage.setItem(ACTOR_PASS_KEY, pass);
     sessionStorage.setItem(ACTOR_NAME_KEY, name.trim());
     sessionStorage.setItem(ACTOR_ROLE_KEY, "super_admin");
+    sessionStorage.setItem(ACTOR_STORE_KEY, "");
     window.dispatchEvent(new Event("lupo-admin-auth-changed"));
     onOk();
   };
@@ -806,6 +812,7 @@ type Attendance = {
   reason_id: string | null;
   reason_other_text: string | null;
   notes: string | null;
+  amount: number | null;
 };
 
 type Store = { id: string; name: string; active: boolean };
@@ -826,7 +833,7 @@ function useAttendances(start: Date, end: Date, storeId: string) {
     setLoading(true);
     let q = supabase
       .from("attendances")
-      .select("id,created_at,sales_rep_id,store_id,type,reason_id,reason_other_text,notes")
+      .select("id,created_at,sales_rep_id,store_id,type,reason_id,reason_other_text,notes,amount")
       .eq("status", "closed")
       .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString())
