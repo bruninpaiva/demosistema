@@ -14,6 +14,9 @@ import {
   Bath,
   Briefcase,
   X,
+  Loader2,
+  WifiOff,
+  RefreshCw,
 } from "lucide-react";
 import {
   DndContext,
@@ -46,21 +49,54 @@ function LojaHome() {
   const { storeId } = Route.useParams();
   const [store, setStore] = useState<Store | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [unlocked, setUnlocked] = useState<boolean>(() =>
     typeof window !== "undefined" && sessionStorage.getItem(pinKey(storeId)) === "1"
   );
 
+  const loadStore = async () => {
+    setNotFound(false);
+    setLoadError(false);
+    try {
+      const { data, error } = await supabase
+        .from("stores")
+        .select("id,name")
+        .eq("id", storeId)
+        .maybeSingle();
+      if (error) {
+        setLoadError(true);
+        return;
+      }
+      if (!data) setNotFound(true);
+      else setStore(data as Store);
+    } catch {
+      setLoadError(true);
+    }
+  };
+
   useEffect(() => {
-    supabase
-      .from("stores")
-      .select("id,name")
-      .eq("id", storeId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!data) setNotFound(true);
-        else setStore(data as Store);
-      });
+    loadStore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="max-w-md rounded-2xl bg-card p-6 text-center shadow">
+          <p className="mb-2 text-lg font-semibold">Não foi possível carregar a loja.</p>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Verifique sua conexão e tente novamente.
+          </p>
+          <button
+            onClick={loadStore}
+            className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2 font-bold text-brand-foreground"
+          >
+            <RefreshCw size={16} /> Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (notFound) {
     return (
@@ -94,22 +130,34 @@ function LojaHome() {
 function PinGate({ store, onOk }: { store: Store; onOk: () => void }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
+  const [networkError, setNetworkError] = useState(false);
   const [checking, setChecking] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (checking) return;
     setChecking(true);
-    const { data, error: rpcErr } = await supabase.rpc("verify_store_pin", {
-      _store_id: store.id,
-      _pin: pin,
-    });
-    setChecking(false);
-    if (!rpcErr && data === true) {
-      onOk();
-    } else {
+    setError(false);
+    setNetworkError(false);
+    try {
+      const { data, error: rpcErr } = await supabase.rpc("verify_store_pin", {
+        _store_id: store.id,
+        _pin: pin,
+      });
+      if (rpcErr) {
+        setNetworkError(true);
+        return;
+      }
+      if (data === true) {
+        onOk();
+        return;
+      }
       setError(true);
       setPin("");
+    } catch {
+      setNetworkError(true);
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -139,23 +187,34 @@ function PinGate({ store, onOk }: { store: Store; onOk: () => void }) {
           </div>
           <input
             autoFocus
+            type="password"
+            autoComplete="off"
             inputMode="numeric"
             pattern="[0-9]*"
             maxLength={8}
             value={pin}
+            disabled={checking}
             onChange={(e) => {
               setPin(e.target.value.replace(/\D/g, ""));
               setError(false);
+              setNetworkError(false);
             }}
-            className="mb-3 w-full rounded-xl border-2 border-border bg-background px-4 py-4 text-center text-3xl tracking-[0.5em] font-bold"
+            className="mb-3 w-full rounded-xl border-2 border-border bg-background px-4 py-4 text-center text-3xl tracking-[0.5em] font-bold disabled:opacity-60"
             placeholder="••••"
           />
           {error && <p className="mb-3 text-center text-sm font-semibold text-destructive">PIN incorreto.</p>}
+          {networkError && (
+            <p className="mb-3 flex items-center justify-center gap-1.5 text-center text-sm font-semibold text-destructive">
+              <WifiOff size={16} /> Não foi possível verificar o PIN. Verifique sua conexão e tente novamente.
+            </p>
+          )}
           <button
             type="submit"
-            className="w-full rounded-xl bg-brand px-6 py-4 text-lg font-bold text-brand-foreground"
+            disabled={checking}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-4 text-lg font-bold text-brand-foreground disabled:opacity-60"
           >
-            Entrar
+            {checking && <Loader2 size={20} className="animate-spin" />}
+            {checking ? "Verificando…" : "Entrar"}
           </button>
         </form>
       </main>
