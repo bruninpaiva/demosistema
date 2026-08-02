@@ -513,6 +513,47 @@ export type Database = {
           },
         ]
       }
+      store_operating_hours: {
+        Row: {
+          closes_at: string
+          created_at: string
+          id: string
+          is_open: boolean
+          opens_at: string
+          store_id: string
+          updated_at: string
+          weekday: number
+        }
+        Insert: {
+          closes_at?: string
+          created_at?: string
+          id?: string
+          is_open?: boolean
+          opens_at?: string
+          store_id: string
+          updated_at?: string
+          weekday: number
+        }
+        Update: {
+          closes_at?: string
+          created_at?: string
+          id?: string
+          is_open?: boolean
+          opens_at?: string
+          store_id?: string
+          updated_at?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_operating_hours_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
