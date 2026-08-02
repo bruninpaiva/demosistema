@@ -2071,7 +2071,73 @@ function StoreAlertsSection({ alerts }: { alerts: DashboardAlert[] }) {
   );
 }
 
-function StoreManagementCenter({ store, alerts, onBack }: { store: Store; alerts: DashboardAlert[]; onBack: () => void }) {
+function commissionPeriodFor(preset: Preset, from: string, to: string): MonthYear | null {
+  if (preset === "mes") {
+    const now = new Date();
+    return { month: now.getMonth() + 1, year: now.getFullYear() };
+  }
+  if (preset === "custom" && from && to) {
+    const f = new Date(from + "T00:00:00");
+    const t = new Date(to + "T00:00:00");
+    if (f.getFullYear() === t.getFullYear() && f.getMonth() === t.getMonth()) {
+      return { month: f.getMonth() + 1, year: f.getFullYear() };
+    }
+  }
+  return null;
+}
+
+function StoreIndicatorsSection({ store, stores }: { store: Store; stores: Store[] }) {
+  const actor = getAdminActor();
+  const [preset, setPreset] = useState<Preset>("hoje");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const { start, end } = useMemo(() => rangeFor(preset, from, to), [preset, from, to]);
+  const { data, loading } = useAttendances(start, end, store.id);
+  const metrics = useDashboardMetrics(data);
+  const breakMinutes = useBreakMinutes(start, end, store.id, ALL_REPS);
+  const commissionPeriod = useMemo(() => commissionPeriodFor(preset, from, to), [preset, from, to]);
+  const commissionSummary = useCommissionSummary(actor, store.id, stores, commissionPeriod);
+
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h4 className="text-base font-bold text-foreground">Indicadores</h4>
+        {loading && <span className="text-xs font-semibold text-muted-foreground">Carregando...</span>}
+      </div>
+      <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {commissionSummary ? (
+          <>
+            <Kpi title="Faturamento" value={formatBRL(commissionSummary.faturamento)} accent="brand" />
+            <Kpi title="Atendimentos" value={metrics.atendimentos} />
+            <Kpi title="Conversão" value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`} accent="success" />
+            <Kpi title="Ticket médio" value={formatBRL(commissionSummary.ticketMedio)} />
+          </>
+        ) : (
+          <>
+            <Kpi title="Atendimentos" value={metrics.atendimentos} />
+            <Kpi title="Conversão" value={`${metrics.conversao.toFixed(1)}% · ${metrics.vendas} vendas`} accent="success" />
+            <Kpi title="Tempo médio" value={formatAvgMinutes(metrics.tempoMedioAtendimentoMin)} />
+            <Kpi title="Minutos em pausa" value={formatMinutes(breakMinutes)} />
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StoreManagementCenter({
+  store,
+  stores,
+  alerts,
+  onBack,
+}: {
+  store: Store;
+  stores: Store[];
+  alerts: DashboardAlert[];
+  onBack: () => void;
+}) {
   return (
     <div className="space-y-5">
       <button
@@ -2104,10 +2170,7 @@ function StoreManagementCenter({ store, alerts, onBack }: { store: Store; alerts
 
       <StoreAlertsSection alerts={alerts} />
       <StoreOperationalStatus storeId={store.id} />
-      <EmptyStoreSection
-        title="Indicadores"
-        description="Em breve, resume atendimentos, conversão e métricas do período selecionado."
-      />
+      <StoreIndicatorsSection store={store} stores={stores} />
       <EmptyStoreSection title="Equipe" description="Em breve, lista vendedoras ativas da loja com status e desempenho." />
       <EmptyStoreSection
         title="Histórico recente"
@@ -2184,6 +2247,7 @@ function StoresTab() {
     return (
       <StoreManagementCenter
         store={selectedStore}
+        stores={stores}
         alerts={alerts.filter((a) => a.storeId === selectedStore.id)}
         onBack={() => setSelectedStoreId(null)}
       />
