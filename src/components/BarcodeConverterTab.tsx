@@ -1,14 +1,26 @@
 import { useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { FileUp, Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-
 const BARCODE_REGEX = /\b\d{8,14}\b/g;
 
+// pdfjs-dist touches browser-only APIs (DOMMatrix, Canvas) at import time, so it
+// can never be a top-level import here — this component's module is reachable
+// from the /admin route's SSR tree. Loaded on demand, only when a user actually
+// picks a file in the browser, never during server rendering.
+let workerConfigured = false;
+
 async function extractCodesFromPdf(file: File): Promise<string[]> {
+  const [pdfjsLib, { default: pdfjsWorker }] = await Promise.all([
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+  ]);
+
+  if (!workerConfigured) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+    workerConfigured = true;
+  }
+
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const codes: string[] = [];
