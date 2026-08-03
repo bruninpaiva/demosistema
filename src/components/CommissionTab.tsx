@@ -1144,14 +1144,14 @@ function WorkView({
     <div className="mx-auto max-w-7xl min-w-0 space-y-5 overflow-hidden">
       {/* Header */}
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-[1_1_320px]">
           <button onClick={onBack} className="mb-2 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft size={14} /> Voltar
           </button>
-          <h2 className="flex min-w-0 flex-wrap items-center gap-2 text-2xl font-bold leading-tight text-brand">
+          <h2 className="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-2xl font-bold leading-tight text-brand">
             <StoreIcon className="shrink-0" size={22} />
-            <span className="min-w-0 max-w-full truncate">{info.store_name}</span>
-            <span className="min-w-0 text-foreground">— {MESES[info.month - 1]}/{info.year}</span>
+            <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">{info.store_name}</span>
+            <span className="shrink-0 text-foreground">— {MESES[info.month - 1]}/{info.year}</span>
             {isClosed ? (
               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">
                 <Lock size={12} /> Fechada
