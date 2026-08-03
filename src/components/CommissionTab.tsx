@@ -1098,14 +1098,14 @@ function WorkView({
 
   /* ---------- Sub-widgets ---------- */
   const MetaProgressTrack = () => (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="font-semibold text-foreground">Progresso da meta</span>
-        <span className="text-muted-foreground">
+    <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 overflow-hidden">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 text-sm">
+        <span className="min-w-0 font-semibold text-foreground">Progresso da meta</span>
+        <span className="whitespace-nowrap text-right text-xs text-muted-foreground tabular-nums sm:text-sm">
           {nextGoal ? `${BRL(Math.max(0, nextGoal.value - totals.liquido))} para ${nextGoal.label}` : "Metas não definidas"}
         </span>
       </div>
-      <div className="relative h-4 rounded-full bg-muted">
+      <div className="relative h-4 min-w-0 overflow-hidden rounded-full bg-muted">
         <div className="h-4 rounded-full bg-brand" style={{ width: `${trackPct}%` }} />
         {metaGoals.map((goal) => (
           <div
@@ -1118,19 +1118,21 @@ function WorkView({
         ))}
       </div>
       {metaGoals.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground [text-wrap:balance]">
           Configure as metas para acompanhar o progresso.
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
           {metaGoals.map((goal) => (
-            <div key={goal.label} className={`rounded-lg border px-3 py-2 ${goal.hit ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-border bg-background"}`}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-bold uppercase text-muted-foreground">{goal.label}</span>
+            <div key={goal.label} className={`flex min-w-0 flex-col overflow-hidden rounded-lg border px-2.5 py-2 ${goal.hit ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-border bg-background"}`}>
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0 text-xs font-bold uppercase text-muted-foreground">{goal.label}</span>
                 {goal.hit && <CheckCircle2 size={14} />}
               </div>
-              <div className="mt-0.5 font-bold">{BRL(goal.value)}</div>
-              <div className="text-xs text-muted-foreground">{PCT(Math.min(100, goal.pct))} · prêmio {BRL(goal.reward)}</div>
+              <div className="mt-1 whitespace-nowrap text-base font-extrabold leading-none tabular-nums">{BRL(goal.value)}</div>
+              <div className="mt-1 min-w-0 text-xs leading-tight text-muted-foreground tabular-nums">
+                <span className="whitespace-nowrap">Prêmio {BRL(goal.reward)}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -1139,16 +1141,17 @@ function WorkView({
   );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto max-w-7xl min-w-0 space-y-5 overflow-hidden">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <button onClick={onBack} className="mb-2 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft size={14} /> Voltar
           </button>
-          <h2 className="flex flex-wrap items-center gap-2 text-2xl font-bold text-brand">
-            <StoreIcon size={22} /> {info.store_name}
-            <span className="text-foreground">— {MESES[info.month - 1]}/{info.year}</span>
+          <h2 className="flex min-w-0 flex-wrap items-center gap-2 text-2xl font-bold leading-tight text-brand">
+            <StoreIcon className="shrink-0" size={22} />
+            <span className="min-w-0 max-w-full truncate">{info.store_name}</span>
+            <span className="min-w-0 text-foreground">— {MESES[info.month - 1]}/{info.year}</span>
             {isClosed ? (
               <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">
                 <Lock size={12} /> Fechada
@@ -1165,7 +1168,7 @@ function WorkView({
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap justify-end gap-2">
           {!isClosed && (
             <>
               <button onClick={() => inputRef.current?.click()} disabled={saving} className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand/90 disabled:opacity-50">
@@ -1208,7 +1211,7 @@ function WorkView({
       </div>
 
       {vendedoras.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-16 text-center">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-dashed border-border bg-card p-8 text-center sm:p-12 lg:p-16">
           <Upload className="mx-auto mb-4 text-muted-foreground" size={48} />
           <p className="text-xl font-semibold">Importe a planilha para começar</p>
           <p className="mt-1 text-muted-foreground">A competência já foi criada com as metas informadas.</p>
@@ -1217,45 +1220,45 @@ function WorkView({
         <>
           {/* Resumo principal */}
           {canFinance && (
-            <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.4fr_1fr]">
-                <div className="rounded-xl border border-brand/20 bg-brand p-4 text-white">
-                  <div className="text-xs font-bold uppercase tracking-wide text-white/80">Venda Atual</div>
-                  <div className="mt-2 text-3xl font-extrabold">{BRL(totals.liquido)}</div>
-                  <div className="mt-1 text-sm text-white/80">{PCT(pctMeta)} da Meta Mensal</div>
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+              <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.6fr)_minmax(0,0.92fr)]">
+                <div className="flex min-w-0 flex-col justify-between gap-2 overflow-hidden rounded-xl border border-brand/20 bg-brand p-4 text-white">
+                  <div className="min-w-0 text-xs font-bold uppercase tracking-wide text-white/80">Venda Atual</div>
+                  <div className="mt-1 whitespace-nowrap text-[clamp(1.75rem,1.55rem+0.4vw,2rem)] font-extrabold leading-none tabular-nums">{BRL(totals.liquido)}</div>
+                  <div className="min-w-0 whitespace-nowrap text-sm text-white/80">{PCT(pctMeta)} da Meta Mensal</div>
                 </div>
-                <div className="rounded-xl border border-border bg-background p-4">
+                <div className="flex min-w-0 overflow-hidden rounded-xl border border-border bg-background p-4">
                   <MetaProgressTrack />
                 </div>
-                <div className="rounded-xl border border-brand bg-brand/5 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Comissão Final</div>
-                  <div className="mt-2 text-3xl font-extrabold text-brand">{BRL(comissaoFinalTotal)}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
+                <div className="flex min-w-0 flex-col justify-between gap-2 overflow-hidden rounded-xl border border-brand bg-brand/5 p-4">
+                  <div className="min-w-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">Comissão Final</div>
+                  <div className="mt-1 whitespace-nowrap text-[clamp(1.75rem,1.55rem+0.4vw,2rem)] font-extrabold leading-none tabular-nums text-brand">{BRL(comissaoFinalTotal)}</div>
+                  <div className="min-w-0 whitespace-nowrap text-sm text-muted-foreground tabular-nums">
                     Base {BRL(totals.comissao)} + prêmio {BRL(premioTotal)}
                   </div>
                 </div>
               </div>
-              <div className={`mt-4 rounded-xl border p-4 ${premio.valor > 0 ? "border-emerald-300 bg-emerald-50" : "border-border bg-muted/30"}`}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiação por atingimento</div>
-                    <div className="mt-1 flex items-center gap-2 text-lg font-bold">
+              <div className={`mt-4 min-w-0 overflow-hidden rounded-xl border p-4 ${premio.valor > 0 ? "border-emerald-300 bg-emerald-50" : "border-border bg-muted/30"}`}>
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="min-w-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiação por atingimento</div>
+                    <div className="mt-1 flex min-w-0 items-center gap-2 text-lg font-bold leading-tight">
                       {premio.valor > 0 && <CheckCircle2 className="text-emerald-600" size={18} />}
-                      <span className={premio.valor > 0 ? "text-emerald-700" : "text-muted-foreground"}>{premio.motivo}</span>
+                      <span className={`min-w-0 ${premio.valor > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>{premio.motivo}</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-5 text-right">
-                    <div>
+                  <div className="grid min-w-0 grid-cols-1 gap-3 text-left sm:grid-cols-3 sm:text-right">
+                    <div className="min-w-0 overflow-hidden">
                       <div className="text-[10px] font-bold uppercase text-muted-foreground">Individual</div>
-                      <div className="font-extrabold text-brand">{BRL(premio.valor)}</div>
+                      <div className="whitespace-nowrap font-extrabold tabular-nums text-brand">{BRL(premio.valor)}</div>
                     </div>
-                    <div>
+                    <div className="min-w-0 overflow-hidden">
                       <div className="text-[10px] font-bold uppercase text-muted-foreground">Funcionárias</div>
-                      <div className="font-extrabold">{INT(premio.valor > 0 ? vendedoras.length : 0)}</div>
+                      <div className="whitespace-nowrap font-extrabold tabular-nums">{INT(premio.valor > 0 ? vendedoras.length : 0)}</div>
                     </div>
-                    <div>
+                    <div className="min-w-0 overflow-hidden">
                       <div className="text-[10px] font-bold uppercase text-muted-foreground">Total</div>
-                      <div className="font-extrabold text-emerald-700">{BRL(premioTotal)}</div>
+                      <div className="whitespace-nowrap font-extrabold tabular-nums text-emerald-700">{BRL(premioTotal)}</div>
                     </div>
                   </div>
                 </div>
@@ -1264,7 +1267,7 @@ function WorkView({
           )}
 
           {/* KPIs */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
             <KpiGroup title="Operação">
               <Kpi icon={<Users size={18} />} label="Funcionárias" value={INT(vendedoras.length)} />
               <Kpi icon={<Trophy size={18} />} label="Vendas" value={INT(totals.vendas)} />
@@ -1285,34 +1288,34 @@ function WorkView({
           </div>
 
           {/* Ranking podium */}
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h3 className="flex items-center gap-2 text-xl font-extrabold text-foreground">
+          <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+            <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <h3 className="flex min-w-0 items-center gap-2 text-xl font-extrabold leading-tight text-foreground">
                 <Trophy className="text-yellow-500" size={22} /> Ranking
               </h3>
-              <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">Ordenado por venda líquida</span>
+              <span className="max-w-full rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground [text-wrap:balance]">Ordenado por venda líquida</span>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 items-stretch gap-3 sm:grid-cols-3">
               {ranking.slice(0, 3).map((v, i) => {
                 const bgs = ["from-yellow-100 to-yellow-50 border-yellow-300", "from-gray-100 to-gray-50 border-gray-300", "from-orange-100 to-orange-50 border-orange-300"];
                 return (
                   <button
                     key={v.nome}
                     onClick={() => setDetail(v)}
-                    className={`rounded-xl border bg-gradient-to-br ${bgs[i]} p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md`}
+                    className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-gradient-to-br ${bgs[i]} p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-sm font-extrabold text-brand shadow-sm">#{i + 1}</span>
                       <span className="min-w-0 truncate text-base font-extrabold text-foreground">{v.nome}</span>
                     </div>
-                    <div className="mt-1 text-sm text-muted-foreground">
+                    <div className="mt-1 whitespace-nowrap text-sm text-muted-foreground tabular-nums">
                       {canFinance ? BRL(v.liquido) : `${INT(v.vendas)} vendas · ${INT(v.uni)} peças`}
                     </div>
                     {canFinance && (
-                      <div className="mt-1 space-y-0.5 text-xs">
-                        <div className="text-muted-foreground">Comissão: {BRL(v.comissao)}</div>
-                        {premio.valor > 0 && <div className="text-emerald-700">+ Premiação: {BRL(premio.valor)}</div>}
-                        <div className="font-semibold text-brand">Final: {BRL(comissaoFinalDe(v))}</div>
+                      <div className="mt-1 min-w-0 space-y-0.5 text-xs">
+                        <div className="whitespace-nowrap text-muted-foreground tabular-nums">Comissão: {BRL(v.comissao)}</div>
+                        {premio.valor > 0 && <div className="whitespace-nowrap text-emerald-700 tabular-nums">+ Premiação: {BRL(premio.valor)}</div>}
+                        <div className="whitespace-nowrap font-semibold tabular-nums text-brand">Final: {BRL(comissaoFinalDe(v))}</div>
                       </div>
                     )}
                   </button>
@@ -1322,9 +1325,9 @@ function WorkView({
           </div>
 
           {/* Table */}
-          <div className="rounded-2xl border border-border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
-              <div className="relative flex-1 min-w-[220px]">
+          <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <div className="flex min-w-0 flex-wrap items-center gap-3 border-b border-border p-4">
+              <div className="relative min-w-0 flex-1 basis-64">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                 <input
                   value={search}
@@ -1335,8 +1338,8 @@ function WorkView({
               </div>
               <div className="text-sm text-muted-foreground">{filtered.length} funcionárias</div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="min-w-0 overflow-x-auto">
+              <table className="w-full min-w-[920px] text-sm">
                 <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="w-16 px-3 py-3 text-right">#</th>
@@ -1358,7 +1361,7 @@ function WorkView({
                   {paged.map((v, rowIndex) => (
                     <tr key={v.nome} className={`cursor-pointer border-t border-border transition hover:bg-brand/5 ${rowIndex % 2 === 1 ? "bg-muted/20" : ""}`} onClick={() => setDetail(v)}>
                       <td className="px-3 py-3 text-right font-extrabold text-brand">#{rankPos.get(v.nome)}</td>
-                      <td className="min-w-[220px] px-3 py-3 font-semibold">{v.nome}</td>
+                      <td className="min-w-[220px] max-w-[320px] px-3 py-3 font-semibold"><span className="block truncate">{v.nome}</span></td>
                       {canFinance && <td className="min-w-[130px] px-3 py-3 text-right tabular-nums">{BRL(v.liquido)}</td>}
                       {canFinance && <td className="min-w-[130px] px-3 py-3 text-right tabular-nums">{BRL(v.comissao)}</td>}
                       {canFinance && (
@@ -1387,8 +1390,8 @@ function WorkView({
               </table>
             </div>
             {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-border p-3 text-sm">
-                <span className="text-muted-foreground">Página {page} de {totalPages}</span>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border p-3 text-sm">
+                <span className="min-w-0 text-muted-foreground">Página {page} de {totalPages}</span>
                 <div className="flex gap-2">
                   <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="rounded-lg border border-border px-3 py-1 disabled:opacity-40">Anterior</button>
                   <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="rounded-lg border border-border px-3 py-1 disabled:opacity-40">Próxima</button>
@@ -1422,18 +1425,21 @@ function WorkView({
 
 function KpiGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-4">
-      <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">{title}</h4>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">{children}</div>
+    <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-4">
+      <h4 className="mb-3 min-w-0 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">{title}</h4>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">{children}</div>
     </section>
   );
 }
 
 function Kpi({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone?: string }) {
   return (
-    <div className={`rounded-xl border border-border p-3 ${tone ?? "bg-card"}`}>
-      <div className={`flex items-center gap-1 text-xs font-semibold uppercase ${tone ? "text-white/80" : "text-muted-foreground"}`}>{icon} {label}</div>
-      <div className="mt-1 text-lg font-bold">{value}</div>
+    <div className={`flex min-h-12 min-w-0 items-center justify-between gap-3 overflow-hidden rounded-lg border border-border px-3 py-2 ${tone ?? "bg-background"}`}>
+      <div className={`flex min-w-0 items-center gap-2 text-xs font-semibold uppercase leading-none ${tone ? "text-white/80" : "text-muted-foreground"}`}>
+        <span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
+        <span className="min-w-0 whitespace-nowrap">{label}</span>
+      </div>
+      <div className="shrink-0 whitespace-nowrap text-lg font-bold leading-tight tabular-nums">{value}</div>
     </div>
   );
 }
@@ -1454,21 +1460,21 @@ function DetailDrawer({ v, canFinance, rank, premio, rate, comissaoFinal, onClos
   const conversion = v.vendas > 0 ? (v.vendasCom / v.vendas) * 100 : 0;
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/45" onClick={onClose}>
-      <aside className="h-full w-full max-w-xl overflow-y-auto bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
+      <aside className="h-full w-full max-w-xl min-w-0 overflow-y-auto overflow-x-hidden bg-card p-4 shadow-2xl sm:p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-5 flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
             <div className="mb-2 inline-flex rounded-full bg-brand/10 px-3 py-1 text-xs font-extrabold text-brand">Ranking #{rank}</div>
-            <h3 className="text-2xl font-extrabold text-foreground">{v.nome}</h3>
-            <p className="text-sm text-muted-foreground">Detalhe da funcionária na competência selecionada</p>
+            <h3 className="min-w-0 break-words text-2xl font-extrabold leading-tight text-foreground [overflow-wrap:anywhere]">{v.nome}</h3>
+            <p className="mt-1 min-w-0 text-sm text-muted-foreground [text-wrap:balance]">Detalhe da funcionária na competência selecionada</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-muted"><X size={18} /></button>
+          <button onClick={onClose} className="shrink-0 rounded-lg p-1 hover:bg-muted"><X size={18} /></button>
         </div>
 
         {canFinance && (
-          <div className="mb-5 rounded-2xl border border-brand bg-brand/5 p-5">
-            <div className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Comissão Final</div>
-            <div className="mt-1 text-3xl font-extrabold text-brand">{BRL(comissaoFinal)}</div>
-            <div className="mt-1 text-sm text-muted-foreground">Venda líquida {BRL(v.liquido)}</div>
+          <div className="mb-5 flex min-w-0 flex-col overflow-hidden rounded-2xl border border-brand bg-brand/5 p-5">
+            <div className="min-w-0 text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Comissão Final</div>
+            <div className="mt-1 whitespace-nowrap text-[1.75rem] font-extrabold leading-none tabular-nums text-brand sm:text-3xl">{BRL(comissaoFinal)}</div>
+            <div className="mt-1 min-w-0 whitespace-nowrap text-sm text-muted-foreground tabular-nums">Venda líquida {BRL(v.liquido)}</div>
           </div>
         )}
 
@@ -1476,7 +1482,7 @@ function DetailDrawer({ v, canFinance, rank, premio, rate, comissaoFinal, onClos
           {canFinance && (
             <section>
               <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">Financeiro</h4>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Venda Líquida" value={BRL(v.liquido)} highlight />
                 <Field label="Comissão Base" value={BRL(v.comissao)} />
                 <Field label="Meta atingida" value={premio.valor > 0 ? premio.motivo : "Nenhuma"} />
@@ -1490,7 +1496,7 @@ function DetailDrawer({ v, canFinance, rank, premio, rate, comissaoFinal, onClos
 
           <section>
             <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted-foreground">Performance</h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="TM" value={BRL(v.tm)} />
               <Field label="PA" value={NUM(v.pa)} />
               <Field label="PM" value={BRL(v.pm)} />
@@ -1504,19 +1510,19 @@ function DetailDrawer({ v, canFinance, rank, premio, rate, comissaoFinal, onClos
         </div>
 
         {canFinance && (
-          <div className="mt-5 rounded-xl border border-border bg-muted/30 p-4">
-            <div className="mb-2 text-sm font-extrabold uppercase text-muted-foreground">Composição do Pagamento</div>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between"><span>Comissão base ({rate.toFixed(1)}% sobre líquido)</span><span className="font-semibold">{BRL(v.comissao)}</span></div>
-              <div className="flex justify-between">
-                <span>Premiação — {premio.motivo}</span>
+          <div className="mt-5 min-w-0 overflow-hidden rounded-xl border border-border bg-muted/30 p-4">
+            <div className="mb-2 text-sm font-extrabold uppercase text-muted-foreground [text-wrap:balance]">Composição do Pagamento</div>
+            <div className="space-y-2 text-sm">
+              <div className="flex min-w-0 flex-wrap justify-between gap-2"><span className="min-w-0 [text-wrap:balance]">Comissão base ({rate.toFixed(1)}% sobre líquido)</span><span className="whitespace-nowrap font-semibold tabular-nums">{BRL(v.comissao)}</span></div>
+              <div className="flex min-w-0 flex-wrap justify-between gap-2">
+                <span className="min-w-0 [text-wrap:balance]">Premiação — {premio.motivo}</span>
                 <span className={`font-semibold ${premio.valor > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
                   {premio.valor > 0 ? `+ ${BRL(premio.valor)}` : BRL(0)}
                 </span>
               </div>
-              <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
+              <div className="mt-2 flex min-w-0 flex-wrap justify-between gap-2 border-t border-border pt-2 text-base">
                 <span className="font-bold">Total a pagar</span>
-                <span className="font-bold text-brand">{BRL(comissaoFinal)}</span>
+                <span className="whitespace-nowrap font-bold tabular-nums text-brand">{BRL(comissaoFinal)}</span>
               </div>
             </div>
           </div>
@@ -1528,9 +1534,9 @@ function DetailDrawer({ v, canFinance, rank, premio, rate, comissaoFinal, onClos
 
 function Field({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className={`rounded-lg border border-border p-3 ${highlight ? "bg-brand/5" : "bg-background"}`}>
-      <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
-      <div className={`mt-0.5 text-base font-bold ${highlight ? "text-brand" : ""}`}>{value}</div>
+    <div className={`flex min-w-0 flex-col overflow-hidden rounded-lg border border-border p-3 ${highlight ? "bg-brand/5" : "bg-background"}`}>
+      <div className="min-w-0 truncate text-xs font-semibold uppercase text-muted-foreground">{label}</div>
+      <div className={`mt-0.5 whitespace-nowrap text-base font-bold leading-tight tabular-nums ${highlight ? "text-brand" : ""}`}>{value}</div>
     </div>
   );
 }
