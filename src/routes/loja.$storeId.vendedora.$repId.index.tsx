@@ -137,7 +137,7 @@ function ActionPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground shadow-md">
+      <header className="flex min-w-0 items-center gap-3 bg-brand px-4 py-4 text-brand-foreground shadow-md">
         <Link
           to="/loja/$storeId"
           params={{ storeId }}
@@ -146,9 +146,9 @@ function ActionPage() {
         >
           <ArrowLeft size={24} />
         </Link>
-        <div>
+        <div className="min-w-0">
           <p className="text-xs opacity-80">Vendedora</p>
-          <h1 className="text-xl font-bold">{name || "…"}</h1>
+          <h1 className="truncate text-xl font-bold">{name || "…"}</h1>
         </div>
       </header>
 
@@ -178,7 +178,7 @@ function ActionPage() {
                   ) : (
                     <ShoppingBag className="mb-3" size={64} strokeWidth={1.5} />
                   )}
-                  <span className="text-xl md:text-2xl font-extrabold tracking-tight">
+                  <span className="px-3 text-center text-xl font-extrabold leading-tight tracking-tight md:text-2xl">
                     {closingIds.has(att.id) ? "REGISTRANDO…" : "VENDA REALIZADA"}
                   </span>
                 </button>
@@ -193,7 +193,7 @@ function ActionPage() {
                   }`}
                 >
                   <XCircle className="mb-3" size={64} strokeWidth={1.5} />
-                  <span className="text-xl md:text-2xl font-extrabold tracking-tight">NÃO VENDEU</span>
+                  <span className="px-3 text-center text-xl font-extrabold leading-tight tracking-tight md:text-2xl">NÃO VENDEU</span>
                 </Link>
               </div>
             </div>

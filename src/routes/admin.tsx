@@ -240,12 +240,12 @@ export function AdminPage({ initialTab = "dashboard" }: { initialTab?: Tab } = {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
+      <header className="flex min-w-0 items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
         <Link to="/" className="rounded-lg p-2 hover:bg-white/10" aria-label="Voltar"><ArrowLeft size={22} /></Link>
         <div className="flex items-center rounded-lg bg-white px-2.5 py-1">
           <img src="/bpinfo-logo.jpg" alt="BP Demo" className="h-6 w-auto" />
         </div>
-        <h1 className="text-xl font-bold">Administração</h1>
+        <h1 className="min-w-0 truncate text-lg font-bold sm:text-xl">Administração</h1>
 
         <div className="ml-auto">
           <NotificationBell />
@@ -343,7 +343,7 @@ export function AdminPage({ initialTab = "dashboard" }: { initialTab?: Tab } = {
         ))}
       </nav>
 
-      <main className="mx-auto max-w-6xl p-4 md:p-8">
+      <main className="mx-auto max-w-6xl min-w-0 p-4 md:p-8">
         {tab === "dashboard" && <Dashboard />}
         {tab === "executiva" && <ExecutiveDashboard onOpenStore={goToStore} onOpenTab={setTab} />}
         {tab === "por-vendedora" && <PerRepTab initialRepId={perRepFocusId} />}
@@ -817,7 +817,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       <form
         onSubmit={submit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl"
+        className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-card p-6 shadow-xl"
       >
         <h3 className="mb-4 text-lg font-bold">Alterar senha</h3>
 
@@ -1563,12 +1563,12 @@ function dayLabel(d: Date): string {
 
 function StoreFilter({ storeId, setStoreId, stores }: { storeId: string; setStoreId: (s: string) => void; stores: Store[] }) {
   return (
-    <div className="mb-4 flex items-center gap-2">
-      <StoreIcon size={18} className="text-brand" />
+    <div className="mb-4 flex min-w-0 items-center gap-2">
+      <StoreIcon size={18} className="shrink-0 text-brand" />
       <select
         value={storeId}
         onChange={(e) => setStoreId(e.target.value)}
-        className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold"
+        className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold"
       >
         <option value={ALL_STORES}>Todas as lojas</option>
         {stores.map((s) => (
@@ -1595,12 +1595,12 @@ function RepFilter({ repId, setRepId, reps, storeId, stores }: {
   }, [reps, storeId, stores]);
 
   return (
-    <div className="mb-4 flex items-center gap-2">
-      <UserSearch size={18} className="text-brand" />
+    <div className="mb-4 flex min-w-0 items-center gap-2">
+      <UserSearch size={18} className="shrink-0 text-brand" />
       <select
         value={repId}
         onChange={(e) => setRepId(e.target.value)}
-        className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold"
+        className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold"
       >
         <option value={ALL_REPS}>Todas as vendedoras</option>
         {options.map((o) => (
@@ -1627,10 +1627,10 @@ function DateRangeBar({ preset, setPreset, from, setFrom, to, setTo }: {
         </button>
       ))}
       {preset === "custom" && (
-        <div className="flex items-center gap-2">
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-border bg-card px-3 py-2 text-sm" />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm" />
           <span className="text-muted-foreground">até</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-border bg-card px-3 py-2 text-sm" />
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm" />
         </div>
       )}
     </div>
@@ -1846,7 +1846,7 @@ function ExecutiveDashboard({ onOpenStore, onOpenTab }: { onOpenStore: (storeId:
       </div>
       <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <Kpi title="Lojas ativas" value={storesInScope.filter((s) => s.active).length} />
         <Kpi title="Vendedoras cadastradas" value={repsInScope.length} />
         <Kpi title="Em atendimento" value={scopedTodayOpenRows.length} accent="brand" />
@@ -1914,7 +1914,7 @@ function ExecutiveDashboard({ onOpenStore, onOpenTab }: { onOpenStore: (storeId:
 
           <section className="rounded-2xl bg-card p-5 shadow-sm">
             <h3 className="mb-4 text-lg font-bold">Acesso Rapido</h3>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
               {[
                 { label: "Lojas", tab: "lojas" as Tab, icon: StoreIcon },
                 { label: "Comissao", tab: "comissao" as Tab, icon: Calculator },
@@ -1922,8 +1922,8 @@ function ExecutiveDashboard({ onOpenStore, onOpenTab }: { onOpenStore: (storeId:
                 { label: "Vendedoras", tab: "vendedoras" as Tab, icon: Users },
                 { label: "Dashboard Geral", tab: "dashboard" as Tab, icon: LayoutDashboard },
               ].map(({ label, tab, icon: Icon }) => (
-                <button key={label} onClick={() => onOpenTab(tab)} className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 text-sm font-bold transition hover:border-brand hover:bg-brand/5 hover:text-brand">
-                  <Icon size={16} /> {label}
+                <button key={label} onClick={() => onOpenTab(tab)} className="flex min-w-0 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-3 text-sm font-bold transition hover:border-brand hover:bg-brand/5 hover:text-brand">
+                  <Icon size={16} className="shrink-0" /> <span className="min-w-0 text-center leading-tight">{label}</span>
                 </button>
               ))}
             </div>
@@ -2173,7 +2173,7 @@ function Dashboard() {
       </div>
 
       {/* xl (não md): em tablet — retrato ou paisagem — os 4 KPIs ficam 2x2; só desktop de verdade vira uma fileira só. */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {commissionSummary ? (
           <>
             <Kpi
@@ -2355,9 +2355,9 @@ function Kpi({ title, value, accent, delta }: { title: string; value: string | n
   const deltaColor = delta?.direction === "up" ? "text-success" : delta?.direction === "down" ? "text-destructive" : "text-muted-foreground";
   const DeltaIcon = delta?.direction === "up" ? ArrowUp : delta?.direction === "down" ? ArrowDown : null;
   return (
-    <div className="rounded-2xl bg-card p-4 shadow-sm">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
-      <p className={`mt-1 text-2xl font-extrabold ${color}`}>{value}</p>
+    <div className="min-w-0 rounded-2xl bg-card p-4 shadow-sm">
+      <p className="min-w-0 text-xs uppercase tracking-wide text-muted-foreground [overflow-wrap:anywhere]">{title}</p>
+      <p className={`mt-1 min-w-0 break-words text-2xl font-extrabold leading-tight ${color}`}>{value}</p>
       {delta && (
         <p className={`mt-1 flex items-center gap-1 text-xs font-semibold ${deltaColor}`}>
           {DeltaIcon && <DeltaIcon size={12} />} {delta.label}
@@ -2684,7 +2684,7 @@ function StoreIndicatorsSection({
       </div>
       <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {commissionSummary ? (
           <>
             <Kpi title="Faturamento" value={formatBRL(commissionSummary.faturamento)} accent="brand" />
@@ -3117,7 +3117,7 @@ function StoreConfigSection({
             {operatingHours.map((day) => {
               const meta = WEEKDAYS.find((d) => d.weekday === day.weekday)!;
               return (
-                <div key={day.weekday} className="grid grid-cols-[92px_72px_1fr_1fr] items-center gap-2 rounded-lg border border-border px-3 py-2">
+                <div key={day.weekday} className="grid grid-cols-2 items-center gap-2 rounded-lg border border-border px-3 py-2 sm:grid-cols-[92px_72px_1fr_1fr]">
                   <span className="text-sm font-semibold">{meta.label}</span>
                   <label className="flex items-center gap-1 text-xs text-muted-foreground">
                     <input
@@ -3653,7 +3653,7 @@ function PerRepTab({ initialRepId }: { initialRepId?: string }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
             <Kpi title="Atendimentos" value={detail.total} />
             <Kpi title="Vendas" value={detail.sales} accent="success" />
             <Kpi title="Não vendas" value={detail.noSales} accent="destructive" />
@@ -3909,7 +3909,7 @@ function BreaksTab() {
       <StoreFilter storeId={storeId} setStoreId={setStoreId} stores={stores} />
       <DateRangeBar preset={preset} setPreset={setPreset} from={from} setFrom={setFrom} to={to} setTo={setTo} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
         <Kpi title="Saídas (fora)" value={totalOff} accent="destructive" />
         <Kpi title="Tempo fora" value={formatDuration(totalMinsOff)} accent="destructive" />
         <Kpi title="Almoços" value={totalLunch} accent="brand" />
@@ -4554,9 +4554,9 @@ function UsersTab() {
           <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center gap-3">
               <AvatarBadge name={editing.name} />
-              <div>
-                <h3 className="text-lg font-bold">{editing.name}</h3>
-                <p className="text-sm text-muted-foreground">{editing.email}</p>
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-bold">{editing.name}</h3>
+                <p className="truncate text-sm text-muted-foreground">{editing.email}</p>
               </div>
             </div>
 
@@ -4581,7 +4581,7 @@ function UsersTab() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/50 p-3 text-sm">
+              <div className="grid grid-cols-1 gap-3 rounded-xl bg-muted/50 p-3 text-sm sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Último acesso</p>
                   <p className="font-medium">{formatLastAccess(editing.last_login_at)}</p>

@@ -163,17 +163,17 @@ function PinGate({ store, onOk }: { store: Store; onOk: () => void }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
+      <header className="flex min-w-0 items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
         <Link to="/" className="rounded-lg p-2 hover:bg-white/10" aria-label="Voltar">
           <ArrowLeft size={24} />
         </Link>
         <div className="flex items-center rounded-lg bg-white px-2.5 py-1">
           <img src="/bpinfo-logo.jpg" alt="BP Demo" className="h-6 w-auto" />
         </div>
-        <h1 className="text-lg font-bold">{store.name}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-lg font-bold">{store.name}</h1>
         <Link
           to="/admin"
-          className="ml-auto rounded-lg px-3 py-1.5 text-sm font-semibold text-brand-foreground/80 transition hover:bg-white/10 hover:text-brand-foreground"
+          className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold text-brand-foreground/80 transition hover:bg-white/10 hover:text-brand-foreground"
         >
           Painel de gestão
         </Link>
@@ -692,13 +692,13 @@ function BreakRow({
 
   return (
     <li
-      className={`flex flex-wrap items-center gap-3 rounded-2xl px-5 py-4 ${
+      className={`flex flex-wrap items-center gap-3 rounded-2xl px-4 py-4 sm:px-5 ${
         isLunch ? "border-2 border-amber-300 bg-amber-50" : "border border-border bg-muted"
       }`}
     >
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className={`text-xl font-semibold ${isLunch ? "text-amber-950" : "text-foreground"}`}>{rep.name}</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <p className={`min-w-0 break-words text-lg font-semibold sm:text-xl ${isLunch ? "text-amber-950" : "text-foreground"}`}>{rep.name}</p>
           <ConversionBadge stats={conv} />
         </div>
         <p className={`text-xs ${isLunch ? "text-amber-800" : "text-muted-foreground"}`}>
@@ -711,7 +711,7 @@ function BreakRow({
       </div>
       <button
         onClick={onReturn}
-        className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-brand-foreground hover:brightness-110"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-brand-foreground hover:brightness-110 sm:w-auto"
       >
         <CheckCircle2 size={16} /> {returnLabel}
       </button>
@@ -744,9 +744,9 @@ function OffReasonModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-widest text-muted-foreground">Fora da loja</p>
-            <h3 className="text-xl font-extrabold">{rep.name}</h3>
+            <h3 className="break-words text-xl font-extrabold">{rep.name}</h3>
             <p className="text-sm text-muted-foreground">Qual o motivo?</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 hover:bg-muted" aria-label="Fechar">

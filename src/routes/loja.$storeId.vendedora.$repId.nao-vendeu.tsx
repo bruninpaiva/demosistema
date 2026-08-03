@@ -82,7 +82,7 @@ function NoSalePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="flex items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
+      <header className="flex min-w-0 items-center gap-3 bg-brand px-4 py-4 text-brand-foreground">
         <Link
           to="/loja/$storeId/vendedora/$repId"
           params={{ storeId, repId }}
@@ -91,8 +91,8 @@ function NoSalePage() {
         >
           <ArrowLeft size={24} />
         </Link>
-        <div>
-          <p className="text-xs opacity-80">Não vendeu · {name}</p>
+        <div className="min-w-0">
+          <p className="truncate text-xs opacity-80">Não vendeu · {name}</p>
           <h1 className="text-xl font-bold">Motivo</h1>
         </div>
       </header>
@@ -133,7 +133,7 @@ function NoSalePage() {
         <button
           onClick={finish}
           disabled={saving || !reasonId}
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-brand py-6 text-2xl font-extrabold text-brand-foreground shadow-xl transition active:scale-[0.98] disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-brand px-4 py-6 text-center text-xl font-extrabold leading-tight text-brand-foreground shadow-xl transition active:scale-[0.98] disabled:opacity-50 sm:text-2xl"
         >
           <Check size={30} /> {saving ? "SALVANDO…" : "FINALIZAR"}
         </button>

@@ -786,7 +786,7 @@ function BulkExcludeModal({ onClose, onApply }: { onClose: () => void; onApply: 
   const [text, setText] = useState("");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-start justify-between gap-2">
           <div>
             <h3 className="text-xl font-bold">Excluir por lista de códigos</h3>
@@ -804,7 +804,7 @@ function BulkExcludeModal({ onClose, onApply }: { onClose: () => void; onApply: 
           placeholder={"001110891250918\n001110891250920\n001110891250921\n\nou 001110891250918;001110891250920;..."}
           className="w-full rounded-lg border border-input bg-background p-3 font-mono text-sm"
         />
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted">Cancelar</button>
           <button
             onClick={() => onApply(text)}

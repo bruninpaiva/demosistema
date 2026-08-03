@@ -1552,7 +1552,7 @@ function MetasDialog({ current, onSave, onClose, saving }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-xl font-bold">Metas & Comissão</h3>
           <button onClick={onClose} className="rounded-lg p-1 hover:bg-muted"><X size={18} /></button>
@@ -1581,7 +1581,7 @@ function MetasDialog({ current, onSave, onClose, saving }: {
               className="w-full rounded-lg border border-border px-3 py-2" />
           </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-border px-4 py-2">Cancelar</button>
           <button
             disabled={saving}
